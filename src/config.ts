@@ -1,16 +1,31 @@
 /**
  * Configuration is entirely environment-driven and validated at boot, so a
- * missing secret fails the container immediately rather than at first use.
+ * missing secret fails the service immediately rather than at first use.
+ *
+ * There are no kaloricketabulky.cz credentials here: every user (the owner
+ * and friends alike) signs in with their own account on the consent page, and
+ * only addresses listed in the allowed-users file may do so.
  */
 
+import { Buffer } from 'node:buffer';
+
 export interface Config {
-  ktEmail: string;
-  ktPassword: string;
-  mcpAuthPassword: string;
   publicUrl: URL;
   port: number;
   stateDir: string;
+  /** AES-256-GCM key that encrypts stored password hashes at rest. */
+  credentialsKey: Buffer;
+  /** One e-mail per line; re-read on change, no restart needed. */
+  allowedUsersFile: string;
+  /** Exact OAuth redirect URIs a client may register. Anything else is refused. */
+  allowedRedirectUris: string[];
 }
+
+/** Claude's connector callback, plus the domain Anthropic says it may move to. */
+const CLAUDE_REDIRECT_URIS = [
+  'https://claude.ai/api/mcp/auth_callback',
+  'https://claude.com/api/mcp/auth_callback',
+];
 
 function required(name: string): string {
   const value = process.env[name];
@@ -31,9 +46,9 @@ export function loadConfig(): Config {
   publicUrl.hash = '';
   if (publicUrl.pathname === '/') publicUrl.pathname = '';
 
-  const mcpAuthPassword = required('MCP_AUTH_PASSWORD');
-  if (mcpAuthPassword.length < 12) {
-    throw new Error('MCP_AUTH_PASSWORD must be at least 12 characters — this guards a public endpoint');
+  const credentialsKey = Buffer.from(required('CREDENTIALS_KEY'), 'base64');
+  if (credentialsKey.length !== 32) {
+    throw new Error('CREDENTIALS_KEY must be 32 bytes, base64-encoded (openssl rand -base64 32)');
   }
 
   const port = Number(process.env['PORT'] ?? 8092);
@@ -41,14 +56,18 @@ export function loadConfig(): Config {
     throw new Error(`PORT must be an integer between 1 and 65535, got "${process.env['PORT']}"`);
   }
 
+  const extraRedirects = (process.env['EXTRA_REDIRECT_URIS'] ?? '')
+    .split(/\s+/)
+    .filter(uri => uri !== '');
+
   return {
-    ktEmail: required('KT_EMAIL'),
-    ktPassword: required('KT_PASSWORD'),
-    mcpAuthPassword,
     publicUrl,
     port,
-    // Docker sets /data explicitly; the bare-metal default must be writable
-    // by an unprivileged local dev run.
+    // The service sets this explicitly; the bare default must be writable by
+    // an unprivileged local dev run.
     stateDir: process.env['STATE_DIR'] ?? './data',
+    credentialsKey,
+    allowedUsersFile: process.env['ALLOWED_USERS_FILE'] ?? './allowed-users',
+    allowedRedirectUris: [...CLAUDE_REDIRECT_URIS, ...extraRedirects],
   };
 }

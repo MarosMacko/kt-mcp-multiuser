@@ -315,14 +315,59 @@ export function assertCzechDate(date: string): string {
 
 export interface KtCredentials {
   email: string;
-  password: string;
+  /**
+   * md5 hex of the password — the only form the site's login ever sees, so
+   * the server never needs to keep the plain password.
+   */
+  passwordMd5: string;
 }
+
+export function md5Hex(value: string): string {
+  return createHash('md5').update(value).digest('hex');
+}
+
+/** Lookup cache lifetimes. Food data barely changes; search results can (own foods, favourites). */
+const SEARCH_TTL_MS = 6 * 60 * 60 * 1000;
+const FOOD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const CACHE_MAX_ENTRIES = 1000;
 
 export class KtClient {
   private cookie: string | null = null;
   private loginInFlight: Promise<void> | null = null;
+  /**
+   * Per-account cache for the read-only lookups (search, portions, nutrition).
+   * Kept per client because a logged-in session can see the user's own foods.
+   */
+  private readonly cache = new Map<string, { expiresAt: number; value: unknown }>();
 
   constructor(private readonly credentials: KtCredentials) {}
+
+  /** Logs in once, throwing KtError if the site rejects the credentials. */
+  async verifyLogin(): Promise<void> {
+    await this.login();
+  }
+
+  private async cached<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {
+    const hit = this.cache.get(key);
+    if (hit && hit.expiresAt > Date.now()) return hit.value as T;
+    const value = await load();
+    this.cache.delete(key);
+    this.cache.set(key, { expiresAt: Date.now() + ttlMs, value });
+    // Map keeps insertion order, so the first key is the oldest entry.
+    while (this.cache.size > CACHE_MAX_ENTRIES) {
+      const oldest = this.cache.keys().next().value;
+      if (oldest === undefined) break;
+      this.cache.delete(oldest);
+    }
+    return value;
+  }
+
+  /** Drops cached search results after a write that can change them. */
+  private invalidateSearches(): void {
+    for (const key of this.cache.keys()) {
+      if (key.startsWith('a:')) this.cache.delete(key);
+    }
+  }
 
   private async request(
     path: string,
@@ -379,10 +424,9 @@ export class KtClient {
     if (this.loginInFlight) return this.loginInFlight;
     this.loginInFlight = (async () => {
       this.cookie = null;
-      const passwordHash = createHash('md5').update(this.credentials.password).digest('hex');
       const { text } = await this.request('/login/create?format=json', {
         method: 'POST',
-        body: { email: this.credentials.email, password: passwordHash },
+        body: { email: this.credentials.email, password: this.credentials.passwordMd5 },
       });
       this.parseEnvelope(text, 'login');
       if (!this.cookie) throw new KtError('login succeeded but no session cookie was issued');
@@ -412,11 +456,14 @@ export class KtClient {
    * recipes in one list tagged by `clazz`. Works anonymously.
    */
   private async autocomplete(query: string, clazz: string): Promise<Record<string, unknown>[]> {
-    const { text } = await this.request(
-      `/autocomplete/foodstuff-activity-meal?format=json&query=${encodeURIComponent(query)}`,
-    );
-    const data = this.parseEnvelope(text, 'search');
-    if (!Array.isArray(data)) throw new KtError('search: expected an array of results');
+    const data = await this.cached(`a:${query.trim().toLowerCase()}`, SEARCH_TTL_MS, async () => {
+      const { text } = await this.request(
+        `/autocomplete/foodstuff-activity-meal?format=json&query=${encodeURIComponent(query)}`,
+      );
+      const parsed = this.parseEnvelope(text, 'search');
+      if (!Array.isArray(parsed)) throw new KtError('search: expected an array of results');
+      return parsed as unknown[];
+    });
     return data.filter(
       (row): row is Record<string, unknown> => !!row && typeof row === 'object' && (row as Record<string, unknown>)['clazz'] === clazz,
     );
@@ -457,6 +504,10 @@ export class KtClient {
    * model instead of us guessing gram weights.
    */
   async getFoodDetail(foodId: string): Promise<FoodDetail> {
+    return this.cached(`d:${foodId}`, FOOD_TTL_MS, () => this.fetchFoodDetail(foodId));
+  }
+
+  private async fetchFoodDetail(foodId: string): Promise<FoodDetail> {
     const { text } = await this.request(
       `/foodstuff/detail/form/${encodeURIComponent(foodId)}?format=json&default=true`,
     );
@@ -488,6 +539,10 @@ export class KtClient {
 
   /** Nutrition for a given quantity, scaled server-side by the site itself. */
   async getNutrition(foodId: string, amount: number, unitId: string): Promise<Nutrition> {
+    return this.cached(`n:${foodId}:${amount}:${unitId}`, FOOD_TTL_MS, () => this.fetchNutrition(foodId, amount, unitId));
+  }
+
+  private async fetchNutrition(foodId: string, amount: number, unitId: string): Promise<Nutrition> {
     const { text } = await this.request(
       `/foodstuff/detail/${encodeURIComponent(foodId)}/${amount}/${encodeURIComponent(unitId)}?format=json`,
     );
@@ -824,6 +879,7 @@ export class KtClient {
    * form (id 0): a one-off diary entry, not a new database food.
    */
   async logOwnFood(args: { title: string; values: OwnFoodValues; meal: MealId; date?: string }): Promise<void> {
+    this.invalidateSearches();
     const form = (await this.authed('/user/foodstuff/add/form/0?format=json')) as Record<string, unknown>;
     const v = args.values;
     const payload: Record<string, unknown> = { ...form };
@@ -881,6 +937,7 @@ export class KtClient {
   }
 
   async setFavourite(kind: 'food' | 'activity', id: string, favourite: boolean): Promise<void> {
+    this.invalidateSearches();
     const type = kind === 'food' ? 'foodstuff' : 'activity';
     await this.authed(
       `/user/settings/favorite/${type}/${favourite ? 'add' : 'remove'}/${assertGuid(id, kind)}?format=json`,
@@ -1021,6 +1078,7 @@ export class KtClient {
     ingredients: Array<{ foodId: string; amount: number; unitId?: string }>;
   }): Promise<string> {
     if (args.ingredients.length === 0) throw new KtError('a recipe needs at least one ingredient');
+    this.invalidateSearches();
 
     const foodstuff = [];
     for (const [i, ingredient] of args.ingredients.entries()) {
@@ -1072,6 +1130,7 @@ export class KtClient {
 
   /** Permanently deletes a saved recipe. */
   async deleteMeal(mealId: string): Promise<void> {
+    this.invalidateSearches();
     await this.authed(`/user/settings/meal/delete/${encodeURIComponent(mealId)}?format=json`);
   }
 }

@@ -25,7 +25,7 @@ server {
     # Sign-in page. add_header in a location replaces the server-level ones, so all headers live here.
     location = /authorize {
         add_header X-Robots-Tag "noindex, nofollow" always;
-        add_header Referrer-Policy "no-referrer" always;
+        add_header Referrer-Policy "same-origin" always;  # not no-referrer: that makes browsers send Origin: null on the form POST, which the app rejects
         add_header X-Content-Type-Options "nosniff" always;
         add_header X-Frame-Options "DENY" always;
         add_header Strict-Transport-Security "max-age=31536000" always;

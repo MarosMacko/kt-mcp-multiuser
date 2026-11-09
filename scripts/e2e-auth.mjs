@@ -9,6 +9,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../dist/app.js';
+import { CLIENT_ORIGINS, CLIENT_REDIRECT_PATTERNS, CLIENT_REDIRECT_URIS } from '../dist/config.js';
 import { KtClient, KtError, md5Hex } from '../dist/kt/client.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'kt-e2e-'));
@@ -23,7 +24,9 @@ const config = {
   stateDir: dir,
   credentialsKey: randomBytes(32),
   allowedUsersFile: allowFile,
-  allowedRedirectUris: ['https://claude.ai/api/mcp/auth_callback', REDIRECT],
+  allowedRedirectUris: [...CLIENT_REDIRECT_URIS, REDIRECT],
+  allowedRedirectPatterns: CLIENT_REDIRECT_PATTERNS,
+  allowedOrigins: CLIENT_ORIGINS,
 };
 const app = createApp(config, {
   verifyLogin: async c => {
@@ -52,8 +55,26 @@ try {
   const noAuth = await post('/mcp', '{}', { 'Content-Type': 'application/json' });
   check('/mcp without token is 401', noAuth.status === 401, noAuth.headers.get('www-authenticate') ?? '');
 
-  const evil = await post('/register', JSON.stringify({ client_name: 'Evil', redirect_uris: ['https://evil.example/cb'], token_endpoint_auth_method: 'none' }), { 'Content-Type': 'application/json' });
-  check('foreign redirect_uri registration refused', evil.status === 400, (await evil.text()).slice(0, 100));
+  const register = redirectUri =>
+    post('/register', JSON.stringify({ client_name: 'Probe', redirect_uris: [redirectUri], token_endpoint_auth_method: 'none' }), { 'Content-Type': 'application/json' });
+  for (const uri of [
+    'https://evil.example/cb',
+    'https://chatgpt.com.evil.example/connector/oauth/abc',
+    'https://chatgpt.com/connector/oauth/abc?next=https://evil.example',
+    'https://chatgpt.com/connector/oauth/../../evil',
+    'http://chatgpt.com/connector/oauth/abc',
+  ]) {
+    const refused = await register(uri);
+    check(`registration refused: ${uri}`, refused.status === 400);
+  }
+  for (const uri of [
+    'https://claude.ai/api/mcp/auth_callback',
+    'https://chatgpt.com/connector_platform_oauth_redirect',
+    'https://chatgpt.com/connector/oauth/cb_1a2B-3c',
+  ]) {
+    const accepted = await register(uri);
+    check(`registration accepted: ${uri}`, accepted.status === 201);
+  }
 
   const reg = await post('/register', JSON.stringify({ client_name: 'Test', redirect_uris: [REDIRECT], token_endpoint_auth_method: 'none' }), { 'Content-Type': 'application/json' });
   const client = await reg.json();
@@ -134,6 +155,15 @@ try {
 
   const foreignOrigin = await post('/mcp', '{}', { 'Content-Type': 'application/json', Origin: 'https://evil.example', Authorization: `Bearer ${tokens2.access_token}` });
   check('foreign Origin refused', foreignOrigin.status === 403);
+
+  const chatgptOrigin = await post('/mcp', JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/list', params: {} }), {
+    'Content-Type': 'application/json',
+    Accept: 'application/json, text/event-stream',
+    Origin: 'https://chatgpt.com',
+    Authorization: `Bearer ${tokens2.access_token}`,
+    'MCP-Protocol-Version': '2025-06-18',
+  });
+  check('ChatGPT Origin accepted', chatgptOrigin.status === 200);
 
   // Allowlist edits are picked up by mtime; make sure it moves.
   await new Promise(r => setTimeout(r, 20));

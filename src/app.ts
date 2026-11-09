@@ -45,6 +45,7 @@ export function createApp(config: Config, deps: AppDeps = realDeps): express.Exp
     allowList: new AllowList(config.allowedUsersFile),
     box: new CredentialBox(config.credentialsKey),
     allowedRedirectUris: config.allowedRedirectUris,
+    allowedRedirectPatterns: config.allowedRedirectPatterns,
     verifyLogin: deps.verifyLogin,
     // A fresh sign-in may carry a new password; start that account's session over.
     onLogin: user => clients.delete(user),
@@ -62,10 +63,11 @@ export function createApp(config: Config, deps: AppDeps = realDeps): express.Exp
 
   const app = express();
   app.disable('x-powered-by');
-  // Trust exactly one hop — our own nginx — and no further. `true` would trust
-  // any X-Forwarded-For the caller sends, letting an attacker mint a fresh
-  // rate-limit bucket per request and defeat brute-force protection on
-  // /authorize. nginx overwrites that header with the real client address.
+  // Trust exactly one hop — our own reverse proxy (Caddy) — and no further.
+  // `true` would trust any X-Forwarded-For the caller sends, letting an
+  // attacker mint a fresh rate-limit bucket per request and defeat brute-force
+  // protection on /authorize. Caddy replaces that header with the real client
+  // address for untrusted callers.
   app.set('trust proxy', 1);
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: false }));
@@ -73,11 +75,14 @@ export function createApp(config: Config, deps: AppDeps = realDeps): express.Exp
   /**
    * The MCP spec requires Origin validation to defend against DNS rebinding.
    * Browsers set Origin; Claude's server-side fetches do not, so only reject an
-   * Origin that is present and foreign.
+   * Origin that is present and foreign. The hosted clients' own origins are
+   * tolerated in case their backends send one (requests still need a token).
    */
+  const allowedOrigins = new Set([config.publicUrl.origin, ...config.allowedOrigins]);
   app.use((req, res, next) => {
     const origin = req.get('origin');
-    if (origin !== undefined && origin !== config.publicUrl.origin) {
+    if (origin !== undefined && !allowedOrigins.has(origin)) {
+      console.warn(`[http] refused Origin ${origin} on ${req.method} ${req.path}`);
       res.status(403).json({ jsonrpc: '2.0', error: { code: -32600, message: 'Forbidden origin' } });
       return;
     }

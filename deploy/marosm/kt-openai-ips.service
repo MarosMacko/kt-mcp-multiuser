@@ -1,0 +1,8 @@
+[Unit]
+Description=Refresh ChatGPT connector IP ranges allowed on kt.marosm.com
+Wants=network-online.target
+After=network-online.target caddy.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/kt-openai-ips-update

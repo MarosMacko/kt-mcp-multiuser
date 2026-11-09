@@ -17,15 +17,33 @@ export interface Config {
   credentialsKey: Buffer;
   /** One e-mail per line; re-read on change, no restart needed. */
   allowedUsersFile: string;
-  /** Exact OAuth redirect URIs a client may register. Anything else is refused. */
+  /** Exact OAuth redirect URIs a client may register. */
   allowedRedirectUris: string[];
+  /** Redirect URI shapes a client may register (whole-string matches). Anything else is refused. */
+  allowedRedirectPatterns: RegExp[];
+  /** Origins accepted on requests that carry an Origin header (besides our own). */
+  allowedOrigins: string[];
 }
 
-/** Claude's connector callback, plus the domain Anthropic says it may move to. */
-const CLAUDE_REDIRECT_URIS = [
+/**
+ * Claude's connector callback (plus the domain Anthropic says it may move to)
+ * and ChatGPT's stable connector callback.
+ */
+export const CLIENT_REDIRECT_URIS = [
   'https://claude.ai/api/mcp/auth_callback',
   'https://claude.com/api/mcp/auth_callback',
+  'https://chatgpt.com/connector_platform_oauth_redirect',
 ];
+
+/**
+ * ChatGPT gives each custom connector its own callback unless the server
+ * returns RFC 9207 `iss` in authorization responses (we don't), see
+ * https://developers.openai.com/plugins/build/auth#redirect-url.
+ */
+export const CLIENT_REDIRECT_PATTERNS = [/^https:\/\/chatgpt\.com\/connector\/oauth\/[A-Za-z0-9_-]{1,128}$/];
+
+/** Hosted MCP clients; their backends may send their own Origin. */
+export const CLIENT_ORIGINS = ['https://claude.ai', 'https://claude.com', 'https://chatgpt.com'];
 
 function required(name: string): string {
   const value = process.env[name];
@@ -68,6 +86,8 @@ export function loadConfig(): Config {
     stateDir: process.env['STATE_DIR'] ?? './data',
     credentialsKey,
     allowedUsersFile: process.env['ALLOWED_USERS_FILE'] ?? './allowed-users',
-    allowedRedirectUris: [...CLAUDE_REDIRECT_URIS, ...extraRedirects],
+    allowedRedirectUris: [...CLIENT_REDIRECT_URIS, ...extraRedirects],
+    allowedRedirectPatterns: CLIENT_REDIRECT_PATTERNS,
+    allowedOrigins: CLIENT_ORIGINS,
   };
 }

@@ -1,15 +1,16 @@
 /**
  * A small multi-user OAuth 2.1 authorization server.
  *
- * The MCP spec makes this server an OAuth resource server, and Claude's custom
- * connector flow drives the full authorization-code + PKCE dance. Each person
+ * The MCP spec makes this server an OAuth resource server, and the custom
+ * connector flows of Claude and ChatGPT drive the full authorization-code +
+ * PKCE dance. Each person
  * "authorizes" by signing in with their own kaloricketabulky.cz account on the
  * consent page; the server checks the e-mail against the owner's allowlist,
  * verifies the login against the site, keeps the (encrypted) md5 so it can log
  * in on their behalf later, and issues a token bound to that account.
  *
- * Only Claude's own callback URLs may be registered as redirect URIs, so a
- * look-alike client cannot use this consent page to phish a token.
+ * Only Claude's and ChatGPT's own callback URLs may be registered as redirect
+ * URIs, so a look-alike client cannot use this consent page to phish a token.
  *
  * The SDK's `mcpAuthRouter` supplies the endpoints and discovery documents and
  * validates PKCE; this file supplies the storage and the consent screen.
@@ -75,6 +76,7 @@ export interface ProviderOptions {
   allowList: AllowList;
   box: CredentialBox;
   allowedRedirectUris: string[];
+  allowedRedirectPatterns: RegExp[];
   /** Resolves if the site accepts the login, throws KtError if it rejects it. */
   verifyLogin: (credentials: KtCredentials) => Promise<void>;
   /** Called after a successful sign-in, so cached sessions pick up new credentials. */
@@ -125,11 +127,15 @@ export class MultiUserOAuthProvider implements OAuthServerProvider {
       },
       registerClient: async (client) => {
         const full = client as OAuthClientInformationFull;
-        const foreign = full.redirect_uris.filter(uri => !this.options.allowedRedirectUris.includes(String(uri)));
+        const allowed = (uri: string) =>
+          this.options.allowedRedirectUris.includes(uri) ||
+          this.options.allowedRedirectPatterns.some(pattern => pattern.test(uri));
+        const foreign = full.redirect_uris.filter(uri => !allowed(String(uri)));
         if (full.redirect_uris.length === 0 || foreign.length > 0) {
           console.warn(`[auth] refused client registration "${full.client_name ?? '?'}" redirect_uris=${full.redirect_uris.join(',')}`);
-          throw new InvalidClientMetadataError('This server only accepts Claude connector clients');
+          throw new InvalidClientMetadataError('This server only accepts Claude and ChatGPT connector clients');
         }
+        console.log(`[auth] registered client "${full.client_name ?? '?'}" redirect_uris=${full.redirect_uris.join(',')}`);
         this.store.update(state => {
           this.pruneUnusedClients(state);
           state.clients[full.client_id] = full;
@@ -141,7 +147,7 @@ export class MultiUserOAuthProvider implements OAuthServerProvider {
 
   /**
    * Renders the sign-in page, then (on POST) verifies the account and mints an
-   * authorization code that redirects back to Claude. The SDK routes both verbs here.
+   * authorization code that redirects back to the client. The SDK routes both verbs here.
    */
   async authorize(client: OAuthClientInformationFull, params: AuthorizationParams, res: Response): Promise<void> {
     const req = res.req;
@@ -383,7 +389,7 @@ export class MultiUserOAuthProvider implements OAuthServerProvider {
 <html lang="sk"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Kalorické tabuľky pre Claude</title>
+<title>Kalorické tabuľky pre AI asistenta</title>
 <style>
   :root { color-scheme: light dark; }
   body { font-family: system-ui, sans-serif; max-width: 26rem; margin: 3rem auto; padding: 0 1.25rem; line-height: 1.5; }
@@ -395,8 +401,8 @@ export class MultiUserOAuthProvider implements OAuthServerProvider {
   .error { background: #fdecea; color: #8a1c12; padding: .6rem .75rem; border-radius: .4rem; margin-top: 1rem; }
   .small { font-size: .82rem; opacity: .7; margin-top: 1.5rem; border-top: 1px solid #8884; padding-top: .75rem; }
 </style></head><body>
-<h1>Prepojiť Claude s Kalorickými tabuľkami</h1>
-<p>Prihlás sa e-mailom a heslom, ktorými sa prihlasuješ do Kalorických tabuliek. Claude potom bude môcť čítať a zapisovať tvoj jedálniček.</p>
+<h1>Prepojiť s Kalorickými tabuľkami</h1>
+<p>Prihlás sa e-mailom a heslom, ktorými sa prihlasuješ do Kalorických tabuliek. Tvoj AI asistent (Claude alebo ChatGPT) potom bude môcť čítať a zapisovať tvoj jedálniček.</p>
 ${error ? `<div class="error">${escapeHtml(error)}</div>` : ''}
 <form method="POST">
   ${hidden('client_id', client.client_id)}

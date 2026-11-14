@@ -86,6 +86,7 @@ export function registerTools(server: McpServer, kt: KtClient): void {
         query: z.string().min(1).describe('Food name (Czech works best) or a 13-digit EAN barcode.'),
         limit: z.number().int().min(1).max(25).optional().describe('Maximum results to return. Defaults to 10.'),
       },
+      annotations: { readOnlyHint: true, openWorldHint: true },
     },
     guard('search_food', async ({ query, limit }) => {
       const hits = await kt.search(query, limit ?? 10);
@@ -106,6 +107,7 @@ export function registerTools(server: McpServer, kt: KtClient): void {
       inputSchema: {
         food_id: z.string().min(1).describe('The food id returned by search_food.'),
       },
+      annotations: { readOnlyHint: true, openWorldHint: true },
     },
     guard('get_food_portions', async ({ food_id }) => {
       const detail = await kt.getFoodDetail(food_id);
@@ -135,6 +137,7 @@ export function registerTools(server: McpServer, kt: KtClient): void {
           .optional()
           .describe(unitDescription),
       },
+      annotations: { readOnlyHint: true, openWorldHint: true },
     },
     guard('get_food_nutrition', async ({ food_id, amount, unit_id }) => {
       return json(await kt.getNutrition(food_id, amount, await resolveUnit(kt, food_id, unit_id)));
@@ -228,6 +231,7 @@ export function registerTools(server: McpServer, kt: KtClient): void {
       description:
         "List the user's own saved recipes with their ids and total energy. Call this before log_meal to find the right recipe id, or when the user asks what recipes they have saved.",
       inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: true },
     },
     guard('list_my_meals', async () => {
       return json({ meals: await kt.listMeals() });
@@ -293,6 +297,7 @@ export function registerTools(server: McpServer, kt: KtClient): void {
         query: z.string().min(1).describe('Activity name in Czech.'),
         limit: z.number().int().min(1).max(25).optional().describe('Maximum results to return. Defaults to 10.'),
       },
+      annotations: { readOnlyHint: true, openWorldHint: true },
     },
     guard('search_activity', async ({ query, limit }) => {
       const hits = await kt.searchActivities(query, limit ?? 10);
@@ -362,6 +367,7 @@ export function registerTools(server: McpServer, kt: KtClient): void {
       inputSchema: {
         date: z.string().optional().describe('Date in dd.MM.yyyy format (Czech style). Omit for today.'),
       },
+      annotations: { readOnlyHint: true, openWorldHint: true },
     },
     guard('get_day_entries', async ({ date }) => {
       const { foods, activities, notes } = await kt.getDayEntries(date);
@@ -557,6 +563,7 @@ export function registerTools(server: McpServer, kt: KtClient): void {
         "List the user's favourite foods and activities and the ones they use most, with the ids log_food and log_activity take. " +
         'Check this first when the user refers to something habitual ("my usual coffee", "the bread I always have"), before a general search_food.',
       inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: true },
     },
     guard('get_usual_items', async () => {
       const items = await kt.getUsualItems();
@@ -600,6 +607,7 @@ export function registerTools(server: McpServer, kt: KtClient): void {
         end_date: z.string().optional().describe('Last day of the period, dd.MM.yyyy. Omit for today.'),
         days: z.number().int().min(1).max(31).optional().describe('Number of days ending with end_date. Defaults to 7.'),
       },
+      annotations: { readOnlyHint: true, openWorldHint: true },
     },
     guard('get_period_overview', async ({ end_date, days }) => {
       const end = end_date ?? todayCzech();
@@ -653,6 +661,7 @@ export function registerTools(server: McpServer, kt: KtClient): void {
       description:
         "List the user's saved day templates (the site's \"Moje jídelníčky\"): whole days of food saved to be written into the diary again. Use the id with apply_template or delete_template.",
       inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: true },
     },
     guard('list_templates', async () => json({ templates: await kt.listTemplates() })),
   );
@@ -751,6 +760,7 @@ export function registerTools(server: McpServer, kt: KtClient): void {
       inputSchema: {
         date: z.string().optional().describe(dateDescription),
       },
+      annotations: { readOnlyHint: true, openWorldHint: true },
     },
     guard('get_day_summary', async ({ date }) => {
       return json({ date: date ?? todayCzech(), summary: await kt.getDaySummary(date) });
@@ -769,6 +779,7 @@ export function registerTools(server: McpServer, kt: KtClient): void {
       inputSchema: {
         date: z.string().optional().describe('Date in dd.MM.yyyy format (Czech style). Omit for today.'),
       },
+      annotations: { readOnlyHint: true, openWorldHint: true },
     },
     guard('get_day_progress', async ({ date }) => {
       const t = await kt.getDayTotals(date ?? todayCzech());

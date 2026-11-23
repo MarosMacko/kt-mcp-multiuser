@@ -1,9 +1,10 @@
 /**
  * A tiny synchronous JSON file store.
  *
- * Holds OAuth clients and issued tokens so a redeploy doesn't force you to
- * reconnect the connector in Claude. Single-process and single-user, so the
- * whole document is read into memory and rewritten atomically on change.
+ * Holds OAuth clients and issued tokens so a redeploy doesn't force anyone to
+ * reconnect their connector. Single-process: the whole document is held in
+ * memory and rewritten atomically on change, which is plenty for hundreds of
+ * users. Run exactly one instance per state directory.
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';

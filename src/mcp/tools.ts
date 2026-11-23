@@ -55,19 +55,20 @@ function failure(error: unknown) {
 }
 
 /**
- * Wraps a tool handler so every call lands in the container log with its
- * arguments and outcome, and every throw becomes an in-band tool error.
- * Without this, a failing tool is invisible from the server side.
+ * Wraps a tool handler so every call lands in the log with its outcome, and
+ * every throw becomes an in-band tool error. Without this, a failing tool is
+ * invisible from the server side. Arguments are not logged: they are the
+ * user's diary (foods, weight), which this server does not keep.
  */
 function guard<Args>(name: string, fn: (args: Args) => Promise<ReturnType<typeof json>>) {
   return async (args: Args) => {
     try {
       const result = await fn(args);
-      console.log(`[tool] ${name} ${JSON.stringify(args)} -> ok`);
+      console.log(`[tool] ${name} -> ok`);
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`[tool] ${name} ${JSON.stringify(args)} -> ${message}`);
+      console.error(`[tool] ${name} -> ${message}`);
       return failure(error);
     }
   };
@@ -79,11 +80,11 @@ export function registerTools(server: McpServer, kt: KtClient): void {
     {
       title: 'Search foods',
       description:
-        'Find foods in the kaloricketabulky.cz database by name or barcode. Call this first whenever the user mentions eating something, to get the food id the other tools need. ' +
-        'The database is Czech, so prefer Czech search terms ("vejce" rather than "egg") for the best matches. ' +
+        'Find foods in the Kalorické tabulky database by name or barcode. Call this first whenever the user mentions eating something, to get the food id the other tools need. ' +
+        'The food database is the same on kaloricketabulky.cz and .sk: search in the language of the user\'s site (see the server instructions), Czech ("vejce") or Slovak ("vajce"), not English. ' +
         'A 13-digit EAN barcode also works and resolves to the exact product.',
       inputSchema: {
-        query: z.string().min(1).describe('Food name (Czech works best) or a 13-digit EAN barcode.'),
+        query: z.string().min(1).describe('Food name in Czech or Slovak, or a 13-digit EAN barcode.'),
         limit: z.number().int().min(1).max(25).optional().describe('Maximum results to return. Defaults to 10.'),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
@@ -91,7 +92,7 @@ export function registerTools(server: McpServer, kt: KtClient): void {
     guard('search_food', async ({ query, limit }) => {
       const hits = await kt.search(query, limit ?? 10);
       if (hits.length === 0) {
-        return json({ results: [], hint: 'No matches. Try a different or more general Czech term.' });
+        return json({ results: [], hint: 'No matches. Try a different or more general term, in Czech or Slovak.' });
       }
       return json({ results: hits });
     }),
@@ -149,7 +150,7 @@ export function registerTools(server: McpServer, kt: KtClient): void {
     {
       title: 'Log food to the diary',
       description:
-        'Write an eating record into the user\'s kaloricketabulky.cz diary. This modifies their real diary, so confirm the food and portion first if there was any ambiguity in what they said. ' +
+        'Write an eating record into the user\'s Kalorické tabulky diary. This modifies their real diary, so confirm the food and portion first if there was any ambiguity in what they said. ' +
         'Returns the nutrition that was logged.',
       inputSchema: {
         food_id: z.string().min(1).describe('The food id returned by search_food.'),
@@ -291,10 +292,10 @@ export function registerTools(server: McpServer, kt: KtClient): void {
     {
       title: 'Search activities',
       description:
-        'Find physical activities in the kaloricketabulky.cz database ("Chůze - 5,0 km/h po rovině", "Běh", "Plavání"). Call this whenever the user mentions exercise, to get the activity id log_activity needs. ' +
-        'The database is Czech, so search with Czech terms ("chůze", "běh", "kolo", "posilování"). Pick the entry whose speed or intensity best matches what the user described.',
+        'Find physical activities in the Kalorické tabulky database ("Chůze - 5,0 km/h po rovině", "Běh", "Plavání"). Call this whenever the user mentions exercise, to get the activity id log_activity needs. ' +
+        'Search with Czech or Slovak terms ("chůze"/"chôdza", "běh"/"beh", "kolo"/"bicykel", "posilování"/"posilňovanie"). Pick the entry whose speed or intensity best matches what the user described.',
       inputSchema: {
-        query: z.string().min(1).describe('Activity name in Czech.'),
+        query: z.string().min(1).describe('Activity name in Czech or Slovak.'),
         limit: z.number().int().min(1).max(25).optional().describe('Maximum results to return. Defaults to 10.'),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
@@ -304,7 +305,7 @@ export function registerTools(server: McpServer, kt: KtClient): void {
       if (hits.length === 0) {
         return json({
           results: [],
-          hint: 'No matches. Try a more general Czech term, or use log_custom_activity if the user knows the calories burned.',
+          hint: 'No matches. Try a more general Czech or Slovak term, or use log_custom_activity if the user knows the calories burned.',
         });
       }
       return json({ results: hits });

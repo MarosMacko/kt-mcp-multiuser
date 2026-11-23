@@ -1,8 +1,7 @@
-// Calls the running kt-mcp on this host directly (127.0.0.1:8092), the same
-// way Claude does, for debugging. Needs a valid access token in KT_TOKEN, e.g.
-// one already issued to a connected account:
+// Calls a running kt-mcp directly, the same way an AI client does, for debugging.
+// Needs a valid access token in KT_TOKEN. Tokens are stored only as hashes, so
+// take one from a client you connected yourself (e.g. MCP Inspector shows it):
 //
-//   export KT_TOKEN=$(sudo python3 -c 'import json;s=json.load(open("/var/lib/kt-mcp/oauth-state.json"));print(next(k for k,v in s["accessTokens"].items() if v["user"]=="someone@example.com"))')
 //   node scripts/mcp-call.mjs list                      # tool names + input schemas
 //   node scripts/mcp-call.mjs search_food '{"query":"vejce"}'
 

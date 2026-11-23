@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Build, test and install kt-mcp on the marosm.com VPS, then restart the service.
-# Run as ubuntu from anywhere inside the repo:  ./deploy/marosm/deploy.sh
-# The service unit, nginx vhost, /etc/kt-mcp and the kt-mcp user are one-time setup (see README-AI.md).
+# Build, test and install kt-mcp into /opt/kt-mcp, then restart the service.
+# Run as a sudo-capable user from anywhere inside the repo:  ./deploy/systemd/deploy.sh
+# One-time setup (kt-mcp user, /etc/kt-mcp/kt-mcp.env, the unit, the proxy) is in docs/SELF-HOSTING.md.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -21,4 +21,4 @@ sudo rsync -a --delete --chown=root:root --chmod=D755,F644 "$stage"/ /opt/kt-mcp
 sudo systemctl restart kt-mcp
 sleep 2
 systemctl is-active kt-mcp
-curl -fsS http://127.0.0.1:8092/healthz && echo
+curl -fsS "http://127.0.0.1:${PORT:-8092}/healthz" && echo

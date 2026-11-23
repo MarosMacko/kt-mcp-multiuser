@@ -4,3 +4,6 @@ dist/
 *.log
 # Local-dev OAuth state (tokens!) — see STATE_DIR in .env.example
 data/
+allowed-users
+# Private notes
+*.local.md

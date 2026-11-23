@@ -1,0 +1,30 @@
+# Optional: let only the hosted AI platforms (Claude, ChatGPT) reach kt-mcp.
+# The sign-in pages stay public, because people open them in their own browser.
+# Claude and ChatGPT keep working everywhere, phones included, because their
+# servers make the calls. Local MCP clients that connect directly from someone's
+# computer (Claude Code, VS Code, Cursor, ...) will NOT work; set
+# ALLOW_LOCAL_CLIENTS=false to match. Use instead of the plain site block from
+# deploy/systemd/Caddyfile.example.
+#
+# 160.79.104.0/21 is Anthropic's published outbound range
+# (https://docs.claude.com/en/api/ip-addresses). OpenAI's ranges change, so
+# kt-openai-ips-update writes them to the imported file every 6 hours; create
+# an empty one first (`echo 'not remote_ip 0.0.0.0/32' > ...`) if you skip ChatGPT.
+
+kt.example.com {
+	request_body {
+		max_size 1MB
+	}
+	@browser_pages path / /privacy /forget /authorize
+	handle @browser_pages {
+		reverse_proxy 127.0.0.1:8092
+	}
+	handle {
+		@not_ai_client {
+			not remote_ip 160.79.104.0/21
+			import /etc/caddy/generated/openai-connector-ips.caddy
+		}
+		error @not_ai_client 403
+		reverse_proxy 127.0.0.1:8092
+	}
+}

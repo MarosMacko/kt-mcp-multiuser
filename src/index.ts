@@ -7,7 +7,14 @@ import { loadConfig } from './config.js';
 
 const config = loadConfig();
 
-createApp(config).listen(config.port, '127.0.0.1', () => {
-  console.log(`kt-mcp listening on 127.0.0.1:${config.port}`);
+createApp(config).listen(config.port, config.host, () => {
+  console.log(`kt-mcp listening on ${config.host}:${config.port}`);
   console.log(`MCP endpoint (public): ${new URL('/mcp', config.publicUrl).href}`);
+  console.log(
+    `Access: ${config.allowedUsersFile ? `only e-mails in ${config.allowedUsersFile}` : 'anyone with a kaloricketabulky.sk/.cz account'}; ` +
+      `local clients ${config.localClients ? 'allowed' : 'not allowed'}`,
+  );
+  if (!config.operator.contact) {
+    console.warn('OPERATOR_CONTACT is not set: the privacy page (/privacy) shows no way to reach you.');
+  }
 });

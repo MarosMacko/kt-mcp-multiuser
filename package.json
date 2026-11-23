@@ -1,16 +1,16 @@
 {
   "name": "kt-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "MIT",
   "type": "module",
-  "description": "Self-hosted remote MCP server exposing kaloricketabulky.cz food logging to AI agents",
+  "description": "MCP server for the Kalorické tabuľky food diary (kaloricketabulky.sk / .cz): multi-user, sign in with your own account, for Claude, ChatGPT and local MCP clients",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/stany9g/kt-mcp.git"
+    "url": "git+https://github.com/MarosMacko/kt-mcp.git"
   },
-  "bugs": "https://github.com/stany9g/kt-mcp/issues",
-  "homepage": "https://github.com/stany9g/kt-mcp#readme",
+  "bugs": "https://github.com/MarosMacko/kt-mcp/issues",
+  "homepage": "https://github.com/MarosMacko/kt-mcp#readme",
   "engines": {
     "node": ">=22"
   },
@@ -18,7 +18,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test \"dist/**/*.test.js\""
+    "test": "npm run build && node --test \"dist/**/*.test.js\"",
+    "e2e": "npm run build && node scripts/e2e-auth.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

@@ -22,7 +22,7 @@ echo "Verifying $BASE"
 # 1. Reachable over TLS from the public internet, which is what Claude needs.
 health=$(curl -fsS --max-time 15 "$BASE/healthz" 2>/dev/null)
 if [[ -z "$health" ]]; then
-  fail "GET /healthz — not reachable. Check (a) the tunnel's public hostname route exists in Cloudflare and points at http://localhost:80, and (b) 'docker ps' shows kt-mcp, kt-mcp-nginx and kt-mcp-tunnel up"
+  fail "GET /healthz — not reachable. Check that DNS points at this machine, ports 80/443 are open, and the proxy and kt-mcp are running (docker compose ps / systemctl status kt-mcp)"
   echo; echo "$fails check(s) failed."; exit 1
 fi
 pass "GET /healthz reachable over TLS"
@@ -59,7 +59,7 @@ fi
 
 echo
 if (( fails == 0 )); then
-  echo "All checks passed. Add this as a custom connector in Claude:"
+  echo "All checks passed. Connector URL for Claude, ChatGPT or any MCP client:"
   echo "  $BASE/mcp"
 else
   echo "$fails check(s) failed."

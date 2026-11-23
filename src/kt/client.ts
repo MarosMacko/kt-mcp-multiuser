@@ -1,5 +1,8 @@
 /**
- * Client for the private JSON API behind www.kaloricketabulky.cz.
+ * Client for the private JSON API behind www.kaloricketabulky.cz and its
+ * Slovak twin www.kaloricketabulky.sk. Both run the same application and food
+ * database (same food ids), but have separate user accounts: a login only works
+ * on the site it was created on. The host also decides the language of names.
  *
  * The site is a Spring MVC app where any route accepts `?format=json` and
  * replies with a `{code, data, message}` envelope (`code: 0` means success).
@@ -12,7 +15,16 @@
 
 import { createHash } from 'node:crypto';
 
-const BASE = 'https://www.kaloricketabulky.cz';
+/** The two sites: same application and food ids, separate user accounts. */
+export const SITES = {
+  cz: 'https://www.kaloricketabulky.cz',
+  sk: 'https://www.kaloricketabulky.sk',
+} as const;
+export type KtSite = keyof typeof SITES;
+
+export function isKtSite(value: unknown): value is KtSite {
+  return value === 'cz' || value === 'sk';
+}
 const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
 
 /** unitGuid for plain grams — accepted by every solid food. */
@@ -320,6 +332,8 @@ export interface KtCredentials {
    * the server never needs to keep the plain password.
    */
   passwordMd5: string;
+  /** The site the account lives on (separate logins). Defaults to cz. */
+  site?: KtSite;
 }
 
 export function md5Hex(value: string): string {
@@ -340,7 +354,11 @@ export class KtClient {
    */
   private readonly cache = new Map<string, { expiresAt: number; value: unknown }>();
 
-  constructor(private readonly credentials: KtCredentials) {}
+  private readonly base: string;
+
+  constructor(private readonly credentials: KtCredentials) {
+    this.base = SITES[credentials.site ?? 'cz'];
+  }
 
   /** Logs in once, throwing KtError if the site rejects the credentials. */
   async verifyLogin(): Promise<void> {
@@ -380,7 +398,7 @@ export class KtClient {
     if (this.cookie) headers['Cookie'] = this.cookie;
     if (init.body !== undefined) headers['Content-Type'] = 'application/json';
 
-    const response = await fetch(BASE + path, {
+    const response = await fetch(this.base + path, {
       method: init.method ?? 'GET',
       headers,
       body: init.body === undefined ? undefined : JSON.stringify(init.body),

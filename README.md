@@ -1,314 +1,209 @@
-# kt-mcp
+# kt-mcp: Kalorické tabuľky pre AI asistenta
 
-**🇨🇿 Česky** · [🇬🇧 English](README.en.md)
+[MCP](https://modelcontextprotocol.io) server, ktorý prepojí AI asistenta (Claude, ChatGPT, Claude Code, VS Code…)
+s tvojím jedálničkom na **kaloricketabulky.sk** alebo **kaloricketabulky.cz**.
 
-Self-hosted [MCP](https://modelcontextprotocol.io) server, který propojí AI agenta s vaším jídelníčkem na **kaloricketabulky.cz**.
+Povieš *„na raňajky som mal rožok so šunkou a dve vajcia“* a asistent vyhľadá potraviny v databáze, vyberie
+správne porcie a zapíše ich do tvojho skutočného jedálnička. Oficiálna aplikácia zostáva zdrojom pravdy, takže
+prémiové funkcie fungujú ďalej.
 
-Řeknete *„snědl jsem 3 vejce a banán"* — agent prohledá českou databázi potravin, vybere správnou porci a zapíše záznamy do vašeho skutečného jídelníčku. Oficiální aplikace zůstává zdrojem pravdy, takže prémiové funkce fungují dál.
+> Neoficiálny projekt, nie je od Dine4Fit, a.s. (prevádzkovateľa Kalorických tabuliek).
 
-Postaveno a otestováno s **Claudem** (desktop, mobil i web přes custom connector), ale server mluví standardním MCP přes HTTPS s OAuth 2.1, takže se může připojit jakýkoli agent, který podporuje vzdálené MCP servery.
+## Rýchly štart: hotový server
 
-> ## Neoficiální projekt, bez vazby na Dine4Fit
->
-> kaloricketabulky.cz provozuje společnost **Dine4Fit, a.s.**, která s tímto
-> projektem nemá nic společného a nijak ho neschvaluje. Veřejné API neexistuje;
-> zde použité endpointy byly vyčteny z frontendového JavaScriptu samotného webu
-> a mohou se kdykoli bez varování změnit nebo rozbít.
->
-> Podmínky Dine4Fit udělují **osobní, nekomerční** licenci. Tento software je
-> zveřejněn proto, abyste si mohli zautomatizovat přístup ke **svému vlastnímu
-> účtu** — což licence dovoluje. Provozovat ho jako placenou nebo víceuživatelskou
-> službu, případně dál šířit potravinová data, která vrací, je jiná věc a jde
-> na váš vrub. Databáze patří Dine4Fit a je chráněna evropskými databázovými právy.
->
-> Držte frekvenci požadavků na lidské úrovni. Nestavte na tom konkurenčního klienta.
+Na **https://kt.marosm.com** beží verejná inštancia, ktorú môže zadarmo používať ktokoľvek s účtom na
+Kalorických tabuľkách (.sk alebo .cz). Je bez záruky: keď sa niečo pokazí, môže chvíľu nefungovať.
 
-## Co s tím jde dělat
+Adresa konektora: **`https://kt.marosm.com/mcp`**
 
-Jakmile je agent připojený, přestane být zapisování jídel otravným proklikáváním vyhledávání. Pár vzorů, které v praxi fungují dobře:
+| Aplikácia | Ako pridať |
+|---|---|
+| **Claude** (web, desktop, mobil) | Nastavenia → Konektory → Pridať vlastný konektor (*Settings → Connectors → Add custom connector*), vlož adresu. Na mobile sa konektor objaví sám po pridaní na webe. |
+| **ChatGPT** | Nastavenia → Aplikácie a konektory → Vytvoriť (vyžaduje zapnutý vývojársky režim). |
+| **Claude Code** | `claude mcp add --transport http kaloricke-tabulky https://kt.marosm.com/mcp`, potom v Claude Code `/mcp` → prihlásiť. |
+| **VS Code, Cursor, iné** | Pridaj vzdialený MCP server typu HTTP s adresou vyššie. |
 
-- **Zapisujte mluvením.** „K snídani jsem měl rohlík se šunkou a dvě vejce." Agent vyhledá potraviny, zvolí přirozené porce (*kus (55 g)* místo odhadovaných gramů) a zapíše každou položku do správného denního jídla.
+Pri pridaní sa otvorí prihlasovacia stránka servera. Vyber, kde máš účet (**kaloricketabulky.sk** alebo
+**kaloricketabulky.cz**, účty sú oddelené), a zadaj e-mail a heslo z tej stránky. Viac nie je treba, žiadna ďalšia
+registrácia.
 
-- **Zautomatizujte rutinu.** Pijete každý den dvě kávy s mlékem — proč je vypisovat? Pokud váš agent umí naplánované úlohy (Claude umí), řekněte mu to jednou: *„Každý den v 9:00 mi zapiš do jídelníčku dvě espressa s mlékem."* Denní konstanty se zapisují samy.
+Ako sa zaobchádza s údajmi: [kt.marosm.com/privacy](https://kt.marosm.com/privacy). Odpojenie a zmazanie:
+povedz asistentovi *„odpoj môj účet Kalorických tabuliek“*, alebo použi [kt.marosm.com/forget](https://kt.marosm.com/forget).
 
-- **Vyfoťte talíř.** Pošlete agentovi fotku oběda a zeptejte se, co na ní je. Rozpozná potraviny, odhadne reálné gramáže z obrázku, spočítá kalorie — a po potvrzení zaloguje. Odhad je odhad, ale u míchaných talířů je to lepší než nezapsat nic.
+Nechceš svoje prihlásenie zveriť cudziemu serveru? Spusti si vlastný, pozri [Vlastný server](#vlastný-server).
 
-- **Vyfoťte recept.** Vyfoťte recept z kuchařky nebo screenshot z webu a řekněte *„ulož mi to jako jídlo"*. Agent přečte suroviny, každou najde v databázi a vytvoří uložený recept — příště zalogujete jedním záznamem. Cestou můžete upravovat: *„vyměň smetanu za bílý jogurt a dej poloviční cukr."*
+## Čo sa dá robiť
 
-- **Zapisujte pohyb a váhu.** „Ráno jsem šel 40 minut rychlou chůzí" vyhledá aktivitu a zapíše ji; kalorie spočítá web podle vaší váhy. Když znáte spálené kalorie z hodinek, zapíšou se přesně ty. A „dnes vážím 82,4" zapíše váhu k dnešku.
+Nie je to len rýchlejšie zapisovanie. Asistent vidí tvoj jedálniček aj ciele, ktoré máš nastavené v profile
+(kalórie, bielkoviny, sacharidy, tuky, vláknina, pitný režim, váha), takže sa ho môžeš pýtať ako výživového poradcu.
+Nič z toho netreba nastavovať, stačí písať.
 
-- **Ptejte se, jak vám jde den.** „Kolik kalorií mi dnes zbývá?" přečte denní součty přímo z jídelníčku. A „kolik bílkovin mi ještě chybí?" porovná den s cíli živin, které máte nastavené na webu — agent pak může navrhnout, co sníst, abyste je trefili.
+**Zapisovanie bez klikania**
+
+- **Hovorom.** *„K obedu som mal 200 g kuracích pŕs a ryžu.“* Asistent nájde potraviny, zvolí prirodzené porcie
+  (*kus (55 g)* namiesto odhadovaných gramov) a zapíše každú položku do správneho jedla dňa.
+- **Fotkou z reštaurácie.** Odfoť tanier a napíš *„zapíš mi to ako večeru“*. Asistent rozpozná jedlo, odhadne
+  gramáže, ukáže ti odhad a po potvrdení zapíše. Funguje aj *„toto som mal včera na obed“*.
+- **Fotkou etikety alebo receptu.** Z etikety prečíta nutričné hodnoty, z receptu suroviny a na *„ulož mi to ako
+  jedlo“* vytvorí uložený recept, ktorý nabudúce zapíšeš jedným záznamom.
+- **Opravy a kopírovanie.** *„Tú ryžu oprav na 150 g“*, *„zmaž poslednú položku“*, *„skopíruj mi včerajšie raňajky
+  na dnes“*.
+- **Pohyb a váha.** *„Ráno som išiel 40 minút rýchlou chôdzou“*, *„dnes vážim 82,4“*.
+- **Rutina.** Ak asistent vie plánované úlohy: *„Každý deň o 9:00 mi zapíš dve espressá s mliekom.“*
+
+**Rady podľa tvojich cieľov**
+
+- **Čo ešte zjesť dnes.** *„Koľko mi dnes zostáva kalórií a bielkovín? Navrhni večeru, ktorá to dorovná.“*
+- **Pred jedlom.** *„Som v reštaurácii, tu je menu (fotka). Čo si mám dať, aby som sa zmestil do dnešných cieľov?“*
+- **Plán na zajtra alebo týždeň.** *„Navrhni mi jedálniček na zajtra podľa mojich cieľov, z jedál, ktoré bežne jem.“*
+  Asistent si vie prečítať tvoje obľúbené a najčastejšie potraviny aj uložené recepty a stavať z nich.
+
+**Prehľady, trendy a odporúčania z histórie**
+
+- **Týždeň a mesiac.** *„Ako mi išiel tento týždeň?“*, *„porovnaj posledné dva týždne“*, *„v ktoré dni prekračujem
+  kalórie?“*
+- **Vzorce v jedle.** *„Kde mi chýbajú bielkoviny?“*, *„v ktoré dni mám priveľa cukru alebo soli?“*,
+  *„z čoho mám najviac kalórií?“*
+- **Návrhy zmien.** *„Pozri sa na posledný mesiac a navrhni tri konkrétne zmeny, aby som schudol pol kila týždenne.“*
+  *„Je môj cieľ kalórií realistický vzhľadom na to, ako mi ide váha?“*
+- **Ráno alebo večer zhrnutie.** Ak asistent vie plánované úlohy: *„Každý večer o 21:00 mi zhrň deň a povedz, čo
+  zajtra urobiť inak.“*
+
+Asistent je tak dobrý, ako dobré sú dáta: čím poctivejšie zapisuješ, tým lepšie rady. Rady o výžive nie sú
+lekárske odporúčanie.
 
 ## Nástroje
 
 | Nástroj | Účel |
 |---|---|
-| `search_food` | Najde potraviny podle českého názvu nebo 13místného EAN kódu. Vrací id potraviny, které potřebují ostatní nástroje. |
-| `get_food_portions` | Vypíše přirozené porce potraviny (`kus (55 g)`, `velký kus (60 g)`), takže „3 vejce" se zapíšou jako tři kusy, ne odhadnutá váha. |
-| `get_food_nutrition` | Kalorie a makra pro dané množství, přepočítané samotným webem. Pouze čtení. |
-| `log_food` | Zapíše záznam o jídle do jídelníčku. |
-| `get_day_summary` | Přečte denní součty. |
-| `get_day_progress` | Porovná den s denními cíli z webu: energie, bílkoviny, sacharidy, tuky, vláknina a všechny další sledované živiny (cukry, sůl…), pitný režim a váha — kolik je snědeno, kolik je cíl a kolik zbývá. |
-| `create_meal` | Uloží recept složený z existujících potravin. |
-| `list_my_meals` | Vypíše uložené recepty s jejich id a celkovou energií. |
-| `log_meal` | Zaloguje celý uložený recept jako jeden záznam. |
-| `delete_meal` | Smaže uložený recept. |
-| `search_activity` | Najde aktivitu (chůze, běh, kolo…) v české databázi. |
-| `log_activity` | Zapíše aktivitu na zadaný počet minut; kalorie spočítá web podle vaší váhy. |
-| `log_custom_activity` | Zapíše aktivitu s kaloriemi, které znáte, třeba z hodinek. |
-| `get_day_entries` | Vypíše všechny záznamy dne: jídla podle denních jídel i aktivity, s id, množstvím a kaloriemi. |
-| `delete_diary_entry` | Smaže jeden záznam jídla, receptu nebo aktivity, třeba chybný nebo duplicitní. |
-| `edit_diary_entry` | Změní množství nebo jednotku jídla, délku aktivity, nebo přesune jídlo do jiného denního jídla. |
-| `copy_meal` | Zkopíruje jídlo (třeba včerejší snídani) na jiný den nebo do jiného denního jídla, celé nebo jen vybrané potraviny. |
-| `log_own_food` | Zapíše jídlo, které v databázi není, s vlastními hodnotami (např. z etikety). Vytvoří jen záznam v deníku, ne novou potravinu v databázi. |
-| `add_note` | Přidá poznámku k celému dni nebo k jednomu jídlu. |
-| `get_usual_items` | Vypíše oblíbené a nejpoužívanější potraviny a aktivity. |
-| `set_favorite` | Přidá potravinu nebo aktivitu do oblíbených, nebo ji z nich odebere. |
-| `get_period_overview` | Přehled za více dní (výchozí týden): kalorie, cíl, aktivita, makra, sledované živiny a pitný režim po dnech i v průměru, včetně průměru vůči cílům živin. |
-| `list_templates` / `create_template` | Vypíše uložené jídelníčky, nebo uloží celý den jako nový. |
-| `apply_template` / `delete_template` | Zapíše uložený jídelníček na zvolené dny, nebo ho smaže. |
-| `log_weight` | Zapíše váhu k danému dni (jedna hodnota na den, nový zápis ji přepíše). |
+| `search_food` | Nájde potraviny podľa názvu (slovensky alebo česky) alebo EAN kódu. Vracia id, ktoré potrebujú ostatné nástroje. |
+| `get_food_portions` | Prirodzené porcie potraviny (`kus (55 g)`), aby sa „3 vajcia“ zapísali ako tri kusy. |
+| `get_food_nutrition` | Kalórie a makrá pre dané množstvo, prepočítané samotným webom. |
+| `log_food` | Zapíše potravinu do jedálnička. |
+| `log_own_food` | Zapíše jedlo, ktoré v databáze nie je, s vlastnými hodnotami (napr. z etikety). |
+| `get_day_entries` | Všetky záznamy dňa s id, množstvom a kalóriami. |
+| `edit_diary_entry` | Zmení množstvo či jednotku, dĺžku aktivity, alebo presunie jedlo do iného jedla dňa. |
+| `delete_diary_entry` | Zmaže jeden záznam. |
+| `copy_meal` | Skopíruje jedlo (napr. včerajšie raňajky) na iný deň alebo do iného jedla dňa. |
+| `add_note` | Pridá poznámku k dňu alebo k jedlu. |
+| `get_day_summary` | Denné súčty. |
+| `get_day_progress` | Deň oproti cieľom z webu: energia, makrá, sledované živiny, pitný režim, váha. |
+| `get_period_overview` | Prehľad za viac dní (predvolene týždeň) po dňoch aj v priemere. |
+| `create_meal` / `list_my_meals` / `log_meal` / `delete_meal` | Uložené recepty: vytvoriť, vypísať, zapísať, zmazať. |
+| `list_templates` / `create_template` / `apply_template` / `delete_template` | Uložené jedálničky celých dní. |
+| `get_usual_items` / `set_favorite` | Obľúbené a najpoužívanejšie potraviny a aktivity. |
+| `search_activity` / `log_activity` / `log_custom_activity` | Aktivity: vyhľadať, zapísať na minúty, alebo so známymi kalóriami (z hodiniek). |
+| `log_weight` | Zapíše váhu k danému dňu. |
+| `disconnect_account` | Odpojí účet od servera a zmaže všetko, čo o ňom server má. |
 
-### Recepty
+Množstvo pri `log_food` a `create_meal` počíta **jednotky**, nie gramy: bez `unit_id` sa použije základná jednotka
+potraviny (gramy, pri nápojoch mililitre), s `unit_id` z `get_food_portions` sa porcia násobí (2 × `porcia (250 ml)` = 500 ml).
 
-Web říká uloženému receptu *jídlo* (meal). `create_meal` ho složí
-z existujících potravin, takže „3 vejce a 200 ml mléka" je jedna znovupoužitelná
-položka místo dvou záznamů vypisovaných pokaždé znovu.
+## Bezpečnosť a súkromie
 
-Množství se řídí stejným pravidlem jako `log_food`: `amount` počítá **jednotky**,
-ne gramy. Vynecháte-li `unit_id`, použije se základní jednotka potraviny — gramy
-u pevných potravin, mililitry u tekutin — tedy to, v čem se recepty běžně píší.
-Když předáte `unit_id` z `get_food_portions`, počet ho násobí: 2 × `porce
-(250 ml)` je 500 ml. Splést se je snadné: jeden raný test zadal 100 jednotek
-`100 ml` a potichu vytvořil recept s deseti litry mléka.
+Ako funguje prihlásenie:
 
-## Jak to funguje
+1. Prihlasovaciu stránku otvára tvoj prehliadač priamo na serveri. AI asistent tvoje heslo nikdy nevidí.
+2. Server z hesla spraví MD5 odtlačok. Presne ten posiela pri prihlásení aj samotný web Kalorických tabuliek;
+   heslo v čitateľnej podobe sa nikam neukladá.
+3. Prihlásenie overí priamo v Kalorických tabuľkách; vlastnú databázu hesiel nemá.
+4. Vydá AI asistentovi náhodný prístupový token (OAuth 2.1 + PKCE). Pri každom tokene uloží tvoj e-mail a odtlačok
+   **zašifrovaný kľúčom odvodeným zo serverového tajomstva a z tohto tokenu**. Samotný token je uložený len ako hash.
 
-kaloricketabulky.cz je Spring MVC aplikace, kde každá routa odpoví i v JSON, když přidáte `?format=json` — vrací obálku `{code, data, message}`. Žádné oficiální ani dokumentované API neexistuje; endpointy byly zrekonstruovány z frontendového JavaScriptu webu. Úplná mapa je v `src/kt/client.ts`.
+Čo z toho vyplýva:
+
+- Ukradnutý súbor so stavom servera je bezcenný, aj keby mal útočník k nemu serverový kľúč: bez platného tokenu, ktorý
+  má len tvoj asistent, sa nedá nič dešifrovať. E-maily v ňom nie sú v čitateľnej podobe.
+- Jedálniček, váha ani aktivity sa na serveri neukladajú, len prechádzajú. Do logov sa nezapisujú ani e-maily,
+  ani obsah volaní.
+- MD5 odtlačok ale na prihlásenie do Kalorických tabuliek stačí a dá sa z neho spätne uhádnuť slabé heslo.
+  **V Kalorických tabuľkách používaj heslo, ktoré nemáš nikde inde.** Zmena hesla na webe okamžite zneplatní všetko,
+  čo má server uložené.
+- Prístupové tokeny platia 7 dní a obnovujú sa; po 60 dňoch nečinnosti sa všetko o účte zmaže automaticky.
+- Prihlasovanie je obmedzené (5 neúspešných pokusov na IP aj na účet za 15 minút, celkový strop za hodinu), aby sa
+  server nedal použiť na skúšanie ukradnutých hesiel.
+- Registrovať sa môžu len klienti s návratovou adresou Claude, ChatGPT alebo localhost (lokálne aplikácie). Stránka
+  podobná prihlasovacej teda nemôže poslať tvoj prístup na cudzí web.
+
+## Vlastný server
+
+Server je malý (Node.js, jeden proces, stav v jednom JSON súbore). Potrebuješ stroj, ktorý beží nepretržite,
+doménu a otvorené porty 80/443. Najkratšia cesta s Dockerom:
+
+```bash
+git clone https://github.com/MarosMacko/kt-mcp.git kt-mcp && cd kt-mcp
+cp .env.example .env
+# v .env vyplň KT_DOMAIN, CREDENTIALS_KEY (openssl rand -base64 32), OPERATOR_NAME, OPERATOR_CONTACT
+docker compose up -d --build
+./scripts/verify-deployment.sh https://<tvoja-doména>
+```
+
+Podrobný návod (Docker, systemd s existujúcim Caddy/nginx, obmedzenie na zoznam ľudí alebo len na Claude/ChatGPT,
+zálohy, aktualizácie, riešenie problémov): **[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)**.
+Nasadzuješ to cez AI agenta? Ten nájde postup v [AGENTS.md](AGENTS.md).
+
+## Ako to funguje
+
+kaloricketabulky.cz a kaloricketabulky.sk bežia na tej istej Spring MVC aplikácii a databáze potravín (rovnaké id
+potravín), ale **účty majú oddelené**: prihlásenie platí len na stránke, kde bol účet založený. Doména určuje aj jazyk
+názvov. Každá cesta odpovie aj v JSON, keď pridáš `?format=json`.
+Server si pri každom používateľovi pamätá, na ktorú doménu sa má obracať.
+Celá mapa endpointov je v [`src/kt/client.ts`](src/kt/client.ts).
 
 ```
-Agent  ──OAuth 2.1──►  kt-mcp  ──JSESSIONID──►  kaloricketabulky.cz
-       ──MCP/HTTPS─►
+AI asistent ──OAuth 2.1 + MCP/HTTPS──► kt-mcp ──JSESSIONID──► kaloricketabulky.sk / .cz
 ```
 
-Dvě hesla, každé hlídá něco jiného:
-
-| Tajemství | Hlídá |
+| Cesta | Účel |
 |---|---|
-| `MCP_AUTH_PASSWORD` | Kdo smí tento server připojit k agentovi. Zadáváte ho jednou v prohlížeči při OAuth souhlasu. |
-| `KT_PASSWORD` | Účet na kaloricketabulky.cz, do kterého nástroje zapisují. Nikdy neopouští server. |
+| `POST /mcp` | MCP endpoint (vyžaduje bearer token) |
+| `/.well-known/oauth-protected-resource/mcp`, `/.well-known/oauth-authorization-server` | OAuth discovery (RFC 9728, RFC 8414) |
+| `/authorize`, `/token`, `/register`, `/revoke` | OAuth: authorization code + PKCE, dynamická registrácia klientov, rotácia refresh tokenov |
+| `/`, `/privacy`, `/forget` | Úvodná stránka, ochrana súkromia, odpojenie účtu |
+| `/healthz` | Kontrola, že server beží |
 
-### Co se stane při připojení
+```
+src/
+  index.ts          štart: načíta konfiguráciu a spustí server
+  config.ts         všetky premenné prostredia (pozri .env.example)
+  app.ts            Express: MCP endpoint, OAuth, stránky
+  auth/provider.ts  OAuth server: tokeny, prihlásenie, odpojenie, migrácia stavu
+  auth/users.ts     allowlist, šifrovanie, odvodzovanie kľúčov, limity prihlasovania
+  auth/store.ts     JSON súbor so stavom
+  kt/client.ts      klient pre kaloricketabulky.sk / .cz
+  mcp/tools.ts      MCP nástroje
+  web/pages.ts      HTML stránky (slovensky)
+deploy/             príklady nasadenia: docker/, systemd/, extras/
+scripts/            overenie nasadenia, bezpečnostný audit, end-to-end test
+```
 
-Žádný token ručně nevytváříte ani nekopírujete — OAuth to udělá za vás:
+## Obmedzenia
 
-1. Do prostředí serveru (`.env`) vložíte svůj **login na kaloricketabulky.cz**
-   (`KT_EMAIL` / `KT_PASSWORD`) a **přístupovou frázi, kterou si vymyslíte**
-   (`MCP_AUTH_PASSWORD`). Přihlašovací údaje ke kalorickým tabulkám zůstávají
-   na vašem serveru; agent je nikdy nevidí.
-2. V agentovi přidáte URL konektoru, `https://<your-host>/mcp`. Agent se u
-   vašeho serveru zaregistruje sám (dynamická registrace klientů).
-3. Otevře se stránka v prohlížeči — obrazovka souhlasu vašeho serveru. Jednou
-   zadáte `MCP_AUTH_PASSWORD`.
-4. Váš server vygeneruje unikátní náhodný přístupový token a předá ho agentovi,
-   který si ho uloží a automaticky obnovuje. Od té chvíle je každé volání
-   nástroje ověřené tímto tokenem.
+- **Nedokumentovaný web.** Zmena na strane Dine4Fit môže čokoľvek rozbiť. Klient pri neočakávanej odpovedi radšej
+  vyhodí chybu, než by zapísal zlý počet kalórií.
+- **Časť porcie receptu sa zapísať nedá.** Web vždy zapíše celý recept. Keď si zjedol len časť, zapíš suroviny jednotlivo.
+- **Jedna inštancia na jeden stavový súbor.** Server nie je stavaný na viac replík naraz.
 
-Protože si každý provozuje vlastní instanci, každý token patří jen jemu: váš
-server zná jen váš jídelníček a tokeny vydává jen tomu, kdo zná vaši frázi.
-Mezi instalacemi se nesdílí nic a žádná centrální služba neexistuje.
-
-## Lokální vývoj
+## Vývoj
 
 ```bash
 npm install
-cp .env.example .env      # doplňte své údaje
-npm run build
-npm test
-
-set -a; source .env; set +a
-PUBLIC_URL=https://localhost:8092 node dist/index.js
+npm test               # build + unit testy
+npm run e2e            # prihlasovací tok end-to-end (prihlásenie je simulované, vyhľadávanie ide na skutočný web)
 ```
 
-`GET /healthz` vrací výsledný veřejný MCP endpoint — nejrychlejší způsob, jak ověřit, že `PUBLIC_URL` je opravdu to, co si myslíte.
+Lokálne spustenie: vyplň `.env` (aspoň `PUBLIC_URL` a `CREDENTIALS_KEY`), potom `set -a; source .env; set +a; npm start`.
+`GET /healthz` vypíše, akú adresu MCP endpointu server hlási.
 
-## Vlastní hosting
+## Pôvod projektu
 
-> ⚠️ Server by měl běžet nepřetržitě — na uspávaném PC selžou naplánované
-> zápisy. Podrobnosti a doporučení v [HOSTING.md](HOSTING.md).
+Projekt vychádza z [stany9g/kt-mcp](https://github.com/stany9g/kt-mcp) (MIT) cez forky
+[honzajscz/kt-mcp](https://github.com/honzajscz/kt-mcp) a [LukasFoukal/kt-mcp](https://github.com/LukasFoukal/kt-mcp),
+od ktorých preberá klienta pre Kalorické tabuľky a väčšinu nástrojov. Táto verzia pridáva viac používateľov na
+jednom serveri s prihlásením vlastným účtom, šifrovanie viazané na token, podporu ChatGPT a lokálnych MCP klientov,
+podporu kaloricketabulky.sk, stránky pre ochranu súkromia a odpojenie a zjednodušené nasadenie. Vďaka pôvodným autorom.
 
-Referenční nasazení používá Docker, nginx a Cloudflare Tunnel zdarma — na hostiteli ani routeru se neotvírá žádný příchozí port. Funguje ale cokoli jiného, co před kontejner postaví HTTPS hostname; tunel je jen nejlevnější bezpečná výchozí volba.
+## Licencia
 
-Cesta požadavku:
-
-```
-Cloudflare → cloudflared (host network) → 127.0.0.1:80 → nginx → kt-mcp:8092
-```
-
-nginx poslouchá jen na loopbacku hostitele a `cloudflared` se připojuje ven.
-Konfigurace nginx (`deploy/nginx.conf.template`) vypíná proxy buffering — bez
-toho by Server-Sent Events čekaly na konec streamu a volání nástrojů by se
-zasekávala.
-
-**1. Vytvořte tunel** (jednou), v Cloudflare Zero Trust dashboardu → Networks → Tunnels:
-
-- Vytvořte tunel, zkopírujte **tunnel token**.
-- Přidejte public hostname se službou **`HTTP`** → **`localhost:80`**.
-  `cloudflared` ze stacku běží v host network módu, takže `localhost:80` je
-  nginx publikovaný na loopbacku hostitele. Obyčejné `http`, protože TLS
-  ukončuje tunel.
-
-Zvolený hostname je dále označován `<your-host>`; funguje jakákoli doména na
-vašem Cloudflare účtu a nic v kódu na ni není vázané.
-
-**2. Sestavte image**, z tohoto adresáře:
-
-```bash
-docker compose build
-```
-
-**3. Nasaďte stack.** `deploy/stack.yml` je runtime compose soubor (funguje samostatně i jako Portainer stack); nastavte tyto proměnné prostředí:
-
-| Proměnná | Hodnota |
-|---|---|
-| `KT_EMAIL` / `KT_PASSWORD` | Váš login na kaloricketabulky.cz |
-| `MCP_HOSTNAME` | `<your-host>` — holý hostname bez schématu. nginx si ho při startu doplní do konfigurace |
-| `MCP_AUTH_PASSWORD` | Dlouhá přístupová fráze, kterou si zvolíte (min. 12 znaků) |
-| `PUBLIC_URL` | `https://<your-host>` — musí přesně odpovídat hostname tunelu |
-| `TUNNEL_TOKEN` | Z kroku 1 |
-
-Udržujte `docker-compose.yml` a `deploy/stack.yml` v souladu — první sestavuje image, druhý ho spouští.
-
-**4. Ověřte nasazení**, než ho připojíte k agentovi:
-
-```bash
-./scripts/verify-deployment.sh https://<your-host>
-```
-
-**5. Připojte agenta.** V Claudovi: Settings → Connectors → Add custom connector → zadejte `https://<your-host>/mcp`. Agent se sám zaregistruje, otevře stránku souhlasu a vy jednou zadáte `MCP_AUTH_PASSWORD`. Ostatní MCP klienti mají vlastní postup „přidat vzdálený MCP server" se stejnou URL.
-
-### Pozdější změna domény
-
-Hostname není zapečený v image — shodovat se musí jen `PUBLIC_URL` a public
-hostname tunelu. Přesun:
-
-1. Přesměrujte public hostname tunelu na novou doménu (nebo vytvořte nový tunel
-   a vyměňte `TUNNEL_TOKEN`).
-2. Aktualizujte `PUBLIC_URL` na stacku a znovu nasaďte.
-3. Znovu spusťte ověřovací skript, pak v agentovi konektor odeberte a přidejte
-   znovu.
-
-Krok 3 je nutný: `PUBLIC_URL` je OAuth issuer a identifikátor zdroje podle
-RFC 8707, takže tokeny vydané pod starým hostname jsou po přesunu správně
-odmítnuty.
-
-### Alternativa: Azure Container Apps
-
-Pokud nechcete spravovat vlastní stroj, `deploy/azure/` nasadí server do
-Azure Container Apps. HTTPS zajistí Azure, takže odpadá nginx i Cloudflare
-tunel. Potřebujete jen [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)
-(verze 2.53 nebo novější) a `KT_EMAIL`, `KT_PASSWORD` a `MCP_AUTH_PASSWORD`
-v `.env` nebo v prostředí:
-
-```bash
-az login
-./deploy/azure/deploy.sh
-```
-
-Skript vytvoří resource group, registr, úložiště a prostředí, sestaví image
-přímo v Azure (`az acr build`, lokální Docker není potřeba), nasadí aplikaci
-a spustí `scripts/verify-deployment.sh`. Na konci vypíše URL konektoru. Nová
-verze se nasazuje stejným příkazem.
-
-Co šablona `deploy/azure/main.bicep` nastavuje a proč:
-
-- **Právě jedna replika, stále zapnutá.** Tokeny jsou v jednom JSON souboru
-  drženém v paměti procesu. Druhá replika by ho přepisovala a škálování na nulu
-  by zpomalilo naplánované zápisy studeným startem.
-- **`/data` na Azure Files**, takže redeploy nevynutí nové připojení
-  konektoru. Sdílení je připojené s právy `0600` pro uživatele `node`.
-- **Tajné hodnoty jako secrets Container App.** Do Azure putují přes
-  `main.bicepparam` z proměnných prostředí, nikdy přes příkazovou řádku.
-- **Rate limiting funguje beze změny.** Ingress Container Apps je jeden proxy
-  hop a skutečnou IP klienta přidává na konec `X-Forwarded-For`, což odpovídá
-  `trust proxy 1`. Pokud před aplikaci přidáte další proxy (např. Front Door),
-  musí se tohle nastavení upravit.
-
-Volitelné proměnné: `AZURE_RESOURCE_GROUP` (výchozí `kt-mcp`),
-`AZURE_LOCATION` (`westeurope`), `AZURE_APP_NAME` (`kt-mcp`) a
-`AZURE_PUBLIC_URL`. Náklady jsou řádově jednotky dolarů měsíčně, většinu tvoří
-registr (tier Basic).
-
-**Vlastní doména.** Bez ní server běží na
-`https://kt-mcp.<něco>.<region>.azurecontainerapps.io`. Pro vlastní doménu
-vytvořte v DNS záznamy, které vypíše `az containerapp hostname add`, doménu
-navažte se spravovaným certifikátem a nasaďte znovu s novou URL:
-
-```bash
-az containerapp hostname add -g kt-mcp -n kt-mcp --hostname kt.example.com
-az containerapp hostname bind -g kt-mcp -n kt-mcp --hostname kt.example.com \
-  --environment kt-mcp-env --validation-method CNAME
-AZURE_PUBLIC_URL=https://kt.example.com ./deploy/azure/deploy.sh
-```
-
-Stejně jako u tunelu pak konektor v agentovi odeberte a přidejte znovu.
-
-### Zaseklí, nebo nemáte kde hostovat?
-
-Pokud při vlastním hostování narazíte, založte [GitHub issue](../../issues) —
-rád pomůžu, od toho issue tracker je.
-
-Vlastní hosting potřebuje stroj, který běží nepřetržitě (viz
-[HOSTING.md](HOSTING.md)), a účet u Cloudflare. Pokud nemáte kde server
-provozovat, ozvěte se na **kt-mcp@stanwhy.me** a něco vymyslíme — jen počítejte
-s tím, že provoz privátní instance znamená reálné náklady na server, které by
-šly za vámi.
-
-## Autentizace
-
-Server je sám sobě OAuth 2.1 autorizačním serverem a implementuje, co MCP specifikace od chráněného zdroje vyžaduje:
-
-- `/.well-known/oauth-protected-resource/mcp` — RFC 9728 discovery
-- `/.well-known/oauth-authorization-server` — RFC 8414 discovery
-- `/authorize`, `/token`, `/register`, `/revoke` — authorization code + PKCE, dynamická registrace klientů, rotace refresh tokenů
-
-Přístupové tokeny žijí 30 dní a persistují se do `/data` na volume, takže redeploy nevynutí nové připojení konektoru.
-
-### Co chrání přístupová fráze
-
-`MCP_AUTH_PASSWORD` je jediná cesta k získání tokenu. Každý požadavek na `/mcp`
-vyžaduje platný bearer token a tokeny vydává výhradně formulář souhlasu po
-porovnání s frází v konstantním čase. Ověřeno auditem
-(`scripts/security-audit.sh`): neautentizovaná volání i volání s padělaným
-tokenem jsou odmítnuta, vymyšlené autorizační kódy a refresh tokeny jsou
-odmítnuty, žádný veřejný endpoint nevydává credential a žádná variace metody či
-cesty se k nástrojům bez tokenu nedostane.
-
-Dvě věci jsou veřejné záměrně a bezpečně: OAuth discovery dokumenty (vyžaduje je
-specifikace) a dynamická registrace klientů. Registrace klienta útočníkovi nic
-nedá — token bez fráze stále nezíská.
-
-Hrubou sílu omezuje limit 100 požadavků za 15 minut na `/authorize`. Limiter
-klíčuje podle IP klienta, proto nginx **přepisuje** `X-Forwarded-For` ověřenou
-hlavičkou `CF-Connecting-IP` od Cloudflare a aplikace věří přesně jednomu proxy
-hopu. Připojování k hlavičce od klienta — nebo `trust proxy: true` — by útočníkovi
-dovolilo vyrobit si nový bucket pro každý požadavek a limit by přestal existovat.
-
-Zbytková rizika, o kterých je dobré vědět: kdokoli s frází má plný přístup;
-jednotlivé tokeny nelze odvolat jinak než smazáním `/data/oauth-state.json`;
-a protože registrace klientů je otevřená, phishingový odkaz na stránku souhlasu
-by mohl frázi zachytit, kdybyste ji tam zadali — před autorizací zkontrolujte
-jméno klienta zobrazené ve formuláři.
-
-## Omezení
-
-- **Nedokumentovaný upstream.** Dine4Fit tu nic negarantuje; refactoring frontendu může bez varování změnit tvary odpovědí. Klient při čemkoli nečekaném vyhodí chybu místo hádání, takže se rozbití projeví hlasitou chybou, ne špatným počtem kalorií.
-- **`md5(hesla)` je ekvivalent hesla.** Web hashuje heslo na klientovi, hash je tedy stejně citlivý jako heslo samotné. Podle toho s `KT_PASSWORD` zacházejte.
-- **Jeden účet na instanci.** Server se přihlašuje k jedinému účtu kaloricketabulky.cz. Dva lidé, dva kontejnery.
-- **Osobní použití.** Automatizace zápisů do vlastního účtu je mnohem měkčí pozice než hromadný scraping, ale pořád je mimo cokoli, co Dine4Fit posvětil. Držte frekvenci požadavků na lidské úrovni a nestavte na tom konkurenčního klienta.
-- **Čtení jednotlivých záznamů dne** je nejméně ověřený endpoint; `get_day_summary` posílá odpověď webu beze změny dál, protože její tvar není plně zdokumentovaný.
-- **Část porce receptu zalogovat nejde.** Formulář pro přidání jídla sice nabízí `count` proti pseudo-jednotkám porce, procenta a gramy, ale server ho ignoruje a zaloguje vždy celý recept — měřeno na receptu o 249 kcal přidalo 0,5 porce i polovina váhy plných 249. `log_meal` proto nemá argument `portions`; když snědená byla jen část receptu, zalogujte suroviny jednotlivě přes `log_food`.
-
-## Licence
-
-[MIT](LICENSE). Databáze potravin a služba kaloricketabulky.cz patří Dine4Fit, a.s. — tato licence pokrývá pouze kód v tomto repozitáři.
+[MIT](LICENSE). Databáza potravín a služba Kalorické tabuľky patria Dine4Fit, a.s.; licencia pokrýva len kód
+v tomto repozitári.

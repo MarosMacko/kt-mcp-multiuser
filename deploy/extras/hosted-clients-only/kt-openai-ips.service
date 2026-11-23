@@ -1,5 +1,5 @@
 [Unit]
-Description=Refresh ChatGPT connector IP ranges allowed on kt.marosm.com
+Description=Refresh ChatGPT connector IP ranges allowed to reach kt-mcp
 Wants=network-online.target
 After=network-online.target caddy.service
 

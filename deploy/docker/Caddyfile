@@ -1,0 +1,12 @@
+# Used by ../../docker-compose.yml. KT_DOMAIN comes from .env.
+# Caddy obtains the TLS certificate itself (ports 80 and 443 must reach this
+# machine), overwrites X-Forwarded-For with the real client address (matching
+# TRUST_PROXY_HOPS=1) and streams responses unbuffered, which MCP needs.
+# No `log` directive on purpose: no access log of who called the server.
+
+{$KT_DOMAIN} {
+	request_body {
+		max_size 1MB
+	}
+	reverse_proxy kt-mcp:8092
+}

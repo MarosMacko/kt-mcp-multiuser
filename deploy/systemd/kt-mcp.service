@@ -1,5 +1,7 @@
+# kt-mcp as a systemd service behind a reverse proxy on the same machine.
+# Install: see docs/SELF-HOSTING.md ("Variant B"). Settings live in /etc/kt-mcp/kt-mcp.env.
 [Unit]
-Description=kt-mcp - Kalorické tabuľky MCP connector for Claude (kt.marosm.com)
+Description=kt-mcp - Kalorické tabuľky MCP server
 After=network-online.target
 Wants=network-online.target
 
@@ -9,7 +11,6 @@ Group=kt-mcp
 EnvironmentFile=/etc/kt-mcp/kt-mcp.env
 Environment=NODE_ENV=production
 Environment=STATE_DIR=/var/lib/kt-mcp
-Environment=ALLOWED_USERS_FILE=/etc/kt-mcp/allowed-users
 ExecStart=/usr/bin/node /opt/kt-mcp/dist/index.js
 Restart=on-failure
 RestartSec=3
@@ -36,7 +37,7 @@ RestrictRealtime=yes
 LockPersonality=yes
 # No MemoryDenyWriteExecute: V8's JIT needs writable+executable pages.
 SystemCallArchitectures=native
-MemoryMax=256M
+MemoryMax=512M
 
 [Install]
 WantedBy=multi-user.target

@@ -1,5 +1,5 @@
 [Unit]
-Description=Refresh ChatGPT connector IP ranges for kt.marosm.com every 6 hours
+Description=Refresh ChatGPT connector IP ranges for kt-mcp every 6 hours
 
 [Timer]
 OnBootSec=2min

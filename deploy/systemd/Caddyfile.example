@@ -1,0 +1,14 @@
+# Site block for an existing Caddy on the same machine as kt-mcp.service.
+# Caddy gets the TLS certificate by itself, overwrites X-Forwarded-For with the
+# real client address (matching TRUST_PROXY_HOPS=1) and streams responses
+# unbuffered, which MCP needs. The app sets its own security headers.
+#
+# No `log` directive on purpose: without it Caddy keeps no access log of who
+# called the server, which is the simplest way to keep personal data out of logs.
+
+kt.example.com {
+	request_body {
+		max_size 1MB
+	}
+	reverse_proxy 127.0.0.1:8092
+}

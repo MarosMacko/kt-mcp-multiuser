@@ -145,7 +145,7 @@ export interface DiaryFood {
   energyUnit: string;
   meal: MealId;
   isRecipe: boolean;
-  /** The database food this entry was logged from; null for recipes and own foods. */
+  /** The database food this entry was logged from; for a recipe entry, the recipe id. */
   foodId: string | null;
   /** Whether the site lets the amount be changed (false for own foods and recipes). */
   editable: boolean;
@@ -270,15 +270,20 @@ function tagNames(list: unknown): string[] {
  * all-zero entry fields are more likely unfilled than a glass of water.
  */
 export function readEntryNutrition(e: Record<string, unknown>): EntryNutrition | null {
+  // The diary scales per-100 g values without rounding (8.3766 g); two decimals is plenty.
+  const num = (key: string) => {
+    const v = parseCzechNumber(e[key]);
+    return v === null ? null : Math.round(v * 100) / 100;
+  };
   const n: EntryNutrition = {
-    energy: parseCzechNumber(e['energy']),
-    protein: parseCzechNumber(e['protein']),
-    carbs: parseCzechNumber(e['carbohydrate']),
-    fat: parseCzechNumber(e['fat']),
-    fibre: parseCzechNumber(e['fiber']),
-    sugar: parseCzechNumber(e['sugar']),
-    saturatedFat: parseCzechNumber(e['saturatedFattyAcid']),
-    salt: parseCzechNumber(e['salt']),
+    energy: num('energy'),
+    protein: num('protein'),
+    carbs: num('carbohydrate'),
+    fat: num('fat'),
+    fibre: num('fiber'),
+    sugar: num('sugar'),
+    saturatedFat: num('saturatedFattyAcid'),
+    salt: num('salt'),
   };
   return (n.protein ?? 0) > 0 || (n.carbs ?? 0) > 0 || (n.fat ?? 0) > 0 ? n : null;
 }
@@ -1063,10 +1068,10 @@ export class KtClient {
   }
 
   /**
-   * Macros for one diary entry. Uses what the diary sent when it sent
-   * anything; otherwise asks the site to scale the database food to the logged
-   * amount (cached, anonymous). Recipes and own foods have no database record
-   * to scale, so they come back null unless the diary carried their macros.
+   * Macros for one diary entry. The diary normally sends them for every entry,
+   * recipes and own foods included (seen live on 24.11.2026); when it does not,
+   * the site is asked to scale the database food to the logged amount (cached,
+   * anonymous). Recipes and own foods have no database record for that fallback.
    */
   async getEntryNutrition(food: DiaryFood): Promise<(EntryNutrition & { source: 'diary' | 'food database' }) | null> {
     if (food.siteNutrition) return { ...food.siteNutrition, source: 'diary' };

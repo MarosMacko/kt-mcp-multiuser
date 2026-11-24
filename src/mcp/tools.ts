@@ -479,7 +479,7 @@ export function registerTools(server: McpServer, kt: KtClient): void {
       description:
         "List every entry in the user's diary for one day: foods and recipes by meal, activities, and notes, each with its entry id. " +
         'Foods carry the amount as displayed plus unit_count and grams/ml as numbers, calories, the database food_id, whether the amount can be edited, ' +
-        'and `nutrition` (energy, protein, carbs, fat, fibre, sugar, saturated fat, salt) for the amount logged. nutrition is null for recipes and own foods. ' +
+        'and `nutrition` (energy, protein, carbs, fat, fibre, sugar, saturated fat, salt) for the amount logged. It comes from the diary itself (recipes and own foods included); a null field means the site has no value for it, not zero. ' +
         'Use this for "what did I log", "where does my fat come from today", to find an entry to edit, move or delete, and before logging to avoid duplicates. ' +
         'For totals against goals use get_day_progress; for many days use get_entries_range.',
       inputSchema: {
@@ -505,7 +505,7 @@ export function registerTools(server: McpServer, kt: KtClient): void {
       description:
         'Every food logged over up to 31 days, with grams/ml and macros per entry, plus a by_food summary (times eaten, total amount, energy and macros) sorted by energy. ' +
         'Use this for questions that need item-level detail over time: comparing the diet with lab results, "what gives me the most sugar", "how much fish/vegetables did I eat this month", ' +
-        'or anything get_period_overview (daily totals only) cannot answer. Entries without nutrition (recipes, own foods) are counted in energy only.',
+        'or anything get_period_overview (daily totals only) cannot answer. Entries the site has no macros for count toward energy only (without_nutrition says how many).',
       inputSchema: {
         end_date: z.string().optional().describe('Last day of the period, dd.MM.yyyy. Omit for today.'),
         days: z.number().int().min(1).max(31).optional().describe('Number of days ending with end_date. Defaults to 7.'),

@@ -69,8 +69,9 @@ Finish with `./scripts/verify-deployment.sh` and `./scripts/security-audit.sh` a
 - Never assume what a write does. Verify it against a real account on a date inside the last 12 months (the site
   refuses older writes), read the diary back, then delete the test entry. Get the account owner's go-ahead first.
 - Known facts: the diary summary's `activityEnergyTotal` stays empty for watch-imported workouts (burned energy is
-  summed from diary activities instead); search rows carry only kcal/100 g; vitamins/minerals have no amounts; a
-  recipe's diary entry has `foodId` = the recipe id and `editable: false`.
+  summed from diary activities instead); diary entries carry their own macros, recipes included; search rows carry
+  only kcal/100 g; vitamins/minerals have no amounts; a recipe's diary entry has `foodId` = the recipe id and
+  `editable: false`.
 
 ## Layout
 

@@ -111,6 +111,7 @@ test('trusts per-entry macros from the diary only when they are filled in', () =
   assert.deepEqual(readEntryNutrition({ energy: '101', protein: 21.3, carbohydrate: 2.1, fat: 1.2, fiber: 0.3, sugar: 1, saturatedFattyAcid: 0.5, salt: 0.1 }), {
     energy: 101, protein: 21.3, carbs: 2.1, fat: 1.2, fibre: 0.3, sugar: 1, saturatedFat: 0.5, salt: 0.1,
   });
+  assert.equal(readEntryNutrition({ energy: '381', protein: 28.635, carbohydrate: 5.06, fat: 27.393, saturatedFattyAcid: 8.3766 })?.saturatedFat, 8.38);
   assert.equal(readEntryNutrition({ energy: '588', protein: 0, carbohydrate: 0, fat: 0 }), null);
   assert.equal(readEntryNutrition({ energy: '588' }), null);
 });

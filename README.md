@@ -129,24 +129,26 @@ potraviny (gramy, pri nápojoch mililitre), s `unit_id` z `get_food_portions` sa
 
 ## Bezpečnosť a súkromie
 
-Ako funguje prihlásenie:
+Ako sa narába s heslom:
 
-1. Prihlasovaciu stránku otvára tvoj prehliadač priamo na serveri. AI asistent tvoje heslo nikdy nevidí.
-2. Server z hesla spraví MD5 odtlačok. Presne ten posiela pri prihlásení aj samotný web Kalorických tabuliek;
-   heslo v čitateľnej podobe sa nikam neukladá.
-3. Prihlásenie overí priamo v Kalorických tabuľkách; vlastnú databázu hesiel nemá.
-4. Vydá AI asistentovi náhodný prístupový token (OAuth 2.1 + PKCE). Pri každom tokene uloží tvoj e-mail a odtlačok
-   **zašifrovaný kľúčom odvodeným zo serverového tajomstva a z tohto tokenu**. Samotný token je uložený len ako hash.
+1. Heslo zadávaš na stránke servera vo svojom prehliadači. AI asistent ho nevidí.
+2. Server z neho spraví MD5, lebo presne to posiela pri prihlásení aj samotný web Kalorických tabuliek. Heslo sa
+   nikam neukladá.
+3. Prihlásenie overí v Kalorických tabuľkách; vlastnú databázu hesiel server nemá.
+4. AI asistent dostane náhodný prístupový token (OAuth 2.1 + PKCE). E-mail a MD5 sa uložia **zašifrované
+   (AES-256-GCM) kľúčom odvodeným zo serverového tajomstva a z tohto tokenu**. Token sám je uložený len ako hash.
 
 Čo z toho vyplýva:
 
-- Ukradnutý súbor so stavom servera je bezcenný, aj keby mal útočník k nemu serverový kľúč: bez platného tokenu, ktorý
-  má len tvoj asistent, sa nedá nič dešifrovať. E-maily v ňom nie sú v čitateľnej podobe.
+- Súbor so stavom servera sa nedá dešifrovať ani so serverovým tajomstvom: chýba token, ktorý má len tvoj asistent.
+  E-maily v ňom sú len ako HMAC.
+- Čitateľné MD5 existuje len v pamäti servera, kým pracuje s tvojím účtom, a v spojení s Kalorickými tabuľkami
+  (HTTPS).
+- MD5 je zastaraný a pre Kalorické tabuľky platí ako heslo: kto ho má, prihlási sa, a slabé heslo sa z neho dá
+  uhádnuť. Nahradiť ho nejde, takto sa prihlasuje samotný web. **Používaj tam heslo, ktoré nemáš nikde inde.**
+  Zmena hesla na webe uložené MD5 okamžite zneplatní.
 - Jedálniček, váha ani aktivity sa na serveri neukladajú, len prechádzajú. Do logov sa nezapisujú ani e-maily,
   ani obsah volaní.
-- MD5 odtlačok ale na prihlásenie do Kalorických tabuliek stačí a dá sa z neho spätne uhádnuť slabé heslo.
-  **V Kalorických tabuľkách používaj heslo, ktoré nemáš nikde inde.** Zmena hesla na webe okamžite zneplatní všetko,
-  čo má server uložené.
 - Prístupové tokeny platia 7 dní a obnovujú sa; po 60 dňoch nečinnosti sa všetko o účte zmaže automaticky.
 - Prihlasovanie je obmedzené (5 neúspešných pokusov na IP aj na účet za 15 minút, celkový strop za hodinu), aby sa
   server nedal použiť na skúšanie ukradnutých hesiel.
@@ -230,13 +232,9 @@ npm run e2e            # prihlasovací tok end-to-end (prihlásenie je simulovan
 Lokálne spustenie: vyplň `.env` (aspoň `PUBLIC_URL` a `CREDENTIALS_KEY`), potom `set -a; source .env; set +a; npm start`.
 `GET /healthz` vypíše, akú adresu MCP endpointu server hlási, a verziu.
 
-**Verzia.** Jediné miesto, kde sa verzia píše, je `version` v `package.json`. `npm run build` k nej pridá skrátený
-commit (z gitu, v Dockeri z `BUILD_COMMIT`). Zobrazuje sa v pätičke každej stránky (*verzia 0.3.0 (a1b2c3d)*),
-v `/healthz`, v informáciách o MCP serveri a v logu pri štarte, takže je vidno, ktorá kópia projektu kde beží.
-Ak build vznikol z necommitnutých zmien, git to pri builde zistí sám a k verzii pribudne *upravená*. Netreba nič
-robiť ručne: po commite a novom builde zmizne. Pri Docker builde s `BUILD_COMMIT` sa to zistiť nedá (obraz nemá
-`.git`), takže sa tam nezobrazuje. Pri vydaní novej verzie zvýš číslo v `package.json` (aj `npm install`
-ho prepíše do `package-lock.json`).
+**Verzia** je len v `package.json` (zvýšiš ju `npm version minor --no-git-tag-version`). Build k nej pridá commit
+z gitu, v Dockeri z `BUILD_COMMIT`, a pri necommitnutých zmenách aj *upravená*. Vidno ju v pätičke stránok,
+v `/healthz` a v logu pri štarte.
 
 ## Pôvod projektu
 

@@ -209,9 +209,9 @@ zadarmo a bez záruky.</p>
 
 <h2>Čo sa ukladá</h2>
 <ul>
-  <li><strong>Prihlásenie do Kalorických tabuliek:</strong> tvoj e-mail a MD5 odtlačok hesla (heslo samotné nie).
-    Sú uložené šifrovane a kľúč na ich dešifrovanie má len tvoj AI asistent v podobe prístupového tokenu.
-    Na serveri nie je tvoj e-mail ani token v čitateľnej podobe.</li>
+  <li><strong>Prihlásenie do Kalorických tabuliek:</strong> tvoj e-mail a MD5 odtlačok hesla (heslo samotné nie),
+    lebo MD5 je to, čím sa do Kalorických tabuliek prihlasuje aj ich web. Sú zašifrované kľúčom, ktorý sa dá
+    odvodiť len s prístupovým tokenom tvojho AI asistenta. Token ani e-mail na serveri nie sú v čitateľnej podobe.</li>
   <li><strong>Údaje o pripojených aplikáciách:</strong> názov a adresa aplikácie (napr. Claude), ktorá sa pripojila.</li>
 </ul>
 

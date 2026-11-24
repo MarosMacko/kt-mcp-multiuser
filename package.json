@@ -1,21 +1,21 @@
 {
-  "name": "kt-mcp",
-  "version": "0.2.0",
+  "name": "kt-mcp-multiuser",
+  "version": "0.3.0",
   "private": true,
   "license": "MIT",
   "type": "module",
   "description": "MCP server for the Kalorické tabuľky food diary (kaloricketabulky.sk / .cz): multi-user, sign in with your own account, for Claude, ChatGPT and local MCP clients",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MarosMacko/kt-mcp.git"
+    "url": "git+https://github.com/MarosMacko/kt-mcp-multiuser.git"
   },
-  "bugs": "https://github.com/MarosMacko/kt-mcp/issues",
-  "homepage": "https://github.com/MarosMacko/kt-mcp#readme",
+  "bugs": "https://github.com/MarosMacko/kt-mcp-multiuser/issues",
+  "homepage": "https://github.com/MarosMacko/kt-mcp-multiuser#readme",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/build-info.mjs",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && node --test \"dist/**/*.test.js\"",

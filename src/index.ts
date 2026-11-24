@@ -4,11 +4,12 @@
 
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
+import { versionLabel } from './version.js';
 
 const config = loadConfig();
 
 createApp(config).listen(config.port, config.host, () => {
-  console.log(`kt-mcp listening on ${config.host}:${config.port}`);
+  console.log(`kt-mcp ${versionLabel()} listening on ${config.host}:${config.port}`);
   console.log(`MCP endpoint (public): ${new URL('/mcp', config.publicUrl).href}`);
   console.log(
     `Access: ${config.allowedUsersFile ? `only e-mails in ${config.allowedUsersFile}` : 'anyone with a kaloricketabulky.sk/.cz account'}; ` +

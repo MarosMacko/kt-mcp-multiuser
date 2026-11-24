@@ -26,6 +26,9 @@ if [[ -z "$health" ]]; then
   echo; echo "$fails check(s) failed."; exit 1
 fi
 pass "GET /healthz reachable over TLS"
+version=$(printf '%s' "$health" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
+commit=$(printf '%s' "$health" | sed -n 's/.*"commit":"\([0-9a-f]*\)".*/\1/p')
+echo "        running version ${version:-unknown}${commit:+ ($commit)}"
 
 # 2. PUBLIC_URL must match the hostname actually being served, or OAuth
 #    discovery advertises a URL Claude cannot reach.

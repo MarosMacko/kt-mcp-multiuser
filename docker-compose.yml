@@ -1,12 +1,17 @@
 # kt-mcp + Caddy (automatic HTTPS). Everything is configured in .env:
 #
 #   cp .env.example .env      # fill in KT_DOMAIN, CREDENTIALS_KEY, OPERATOR_*
-#   docker compose up -d --build
+#   BUILD_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
 #
+# BUILD_COMMIT only labels the build (page footer, /healthz); leaving it out
+# shows the version without a commit.
 # Full guide: docs/SELF-HOSTING.md ("Variant A").
 services:
   kt-mcp:
-    build: .
+    build:
+      context: .
+      args:
+        BUILD_COMMIT: ${BUILD_COMMIT:-}
     image: kt-mcp:latest
     restart: unless-stopped
     env_file: .env

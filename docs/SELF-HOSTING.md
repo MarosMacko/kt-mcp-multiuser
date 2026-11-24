@@ -1,6 +1,6 @@
 # Vlastný server
 
-Návod, ako si kt-mcp spustiť na vlastnom stroji, či už len pre seba, pre rodinu, alebo pre kohokoľvek.
+Návod, ako si kt-mcp-multiuser spustiť na vlastnom stroji, či už len pre seba, pre rodinu, alebo pre kohokoľvek.
 Postup je napísaný tak, aby ho zvládol človek aj AI agent (pre agentov je skrátená verzia v [AGENTS.md](../AGENTS.md)).
 
 ## Čo potrebuješ
@@ -39,7 +39,7 @@ Všetko sa nastavuje premennými prostredia; vzor s komentármi je v [`.env.exam
 Najjednoduchší spôsob na čistom stroji. Caddy si sám vybaví a obnovuje HTTPS certifikát.
 
 ```bash
-git clone https://github.com/MarosMacko/kt-mcp.git kt-mcp && cd kt-mcp
+git clone https://github.com/MarosMacko/kt-mcp-multiuser.git && cd kt-mcp-multiuser
 cp .env.example .env
 ```
 
@@ -57,12 +57,14 @@ OPERATOR_CONTACT=ty@example.com
 Spusti a over:
 
 ```bash
-docker compose up -d --build
-docker compose logs -f kt-mcp        # „kt-mcp listening on 0.0.0.0:8092“
+BUILD_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
+docker compose logs -f kt-mcp        # „kt-mcp 0.3.0 (a1b2c3d) listening on 0.0.0.0:8092“
 ./scripts/verify-deployment.sh https://kt.example.com
 ```
 
-Aktualizácia: `git pull && docker compose up -d --build`. Stav je vo volume `kt-mcp-state`, redeploy nikoho neodpojí.
+Aktualizácia: `git pull && BUILD_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build`. Stav je vo volume
+`kt-mcp-state`, redeploy nikoho neodpojí. `BUILD_COMMIT` len označí verziu v pätičke stránok a v `/healthz`; bez neho
+sa zobrazí verzia bez commitu.
 
 ## Variant B: systemd + existujúca reverzná proxy
 

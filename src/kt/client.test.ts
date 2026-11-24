@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { assertGuid, formatCzechDate, formatCzechDecimal, parseCzechNumber, parseDiarySummary, shiftCzechDate } from './client.js';
+import { assertGuid, formatCzechDate, formatCzechDecimal, parseCzechNumber, parseDiarySummary, readEntryNutrition, shiftCzechDate } from './client.js';
 
 test('parses Czech decimal commas', () => {
   assert.equal(parseCzechNumber('20,43'), 20.43);
@@ -100,6 +100,19 @@ test('reads drink and weight goals, treating a zero weight goal as unset', () =>
   assert.equal(t.drinkTargetLitres, 2.95);
   assert.equal(t.weightKg, 73.8);
   assert.equal(t.weightTargetKg, null);
+});
+
+test('reads whether the goal grows with activity, and null when the site does not say', () => {
+  assert.equal(parseDiarySummary('01.10.2026', { ...diarySummary, balance: { target: '2 500', considerActivity: false } }).goalIncludesActivity, false);
+  assert.equal(parseDiarySummary('01.10.2026', diarySummary).goalIncludesActivity, null);
+});
+
+test('trusts per-entry macros from the diary only when they are filled in', () => {
+  assert.deepEqual(readEntryNutrition({ energy: '101', protein: 21.3, carbohydrate: 2.1, fat: 1.2, fiber: 0.3, sugar: 1, saturatedFattyAcid: 0.5, salt: 0.1 }), {
+    energy: 101, protein: 21.3, carbs: 2.1, fat: 1.2, fibre: 0.3, sugar: 1, saturatedFat: 0.5, salt: 0.1,
+  });
+  assert.equal(readEntryNutrition({ energy: '588', protein: 0, carbohydrate: 0, fat: 0 }), null);
+  assert.equal(readEntryNutrition({ energy: '588' }), null);
 });
 
 test('survives an empty summary without inventing values', () => {

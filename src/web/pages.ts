@@ -10,9 +10,10 @@
 
 import type { Response } from 'express';
 import type { Operator } from '../config.js';
+import { versionLabel } from '../version.js';
 
 /** Public source repository, linked from the landing and privacy pages. */
-export const SOURCE_URL = 'https://github.com/MarosMacko/kt-mcp';
+export const SOURCE_URL = 'https://github.com/MarosMacko/kt-mcp-multiuser';
 
 export function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, c =>
@@ -43,6 +44,7 @@ const STYLE = `
   code, .url { font-family: ui-monospace, monospace; background: var(--muted); padding: .1rem .35rem; border-radius: .25rem; word-break: break-all; }
   footer { margin-top: 2.5rem; font-size: .84rem; opacity: .7; }
   footer a { margin-right: .9rem; }
+  footer .version { white-space: nowrap; }
 `;
 
 function layout(title: string, body: string): string {
@@ -52,7 +54,7 @@ function layout(title: string, body: string): string {
 <title>${escapeHtml(title)}</title>
 <style>${STYLE}</style></head><body>
 ${body}
-<footer><a href="/">Úvod</a><a href="/privacy">Ochrana súkromia</a><a href="/forget">Odpojiť účet</a><a href="${SOURCE_URL}">Zdrojový kód</a></footer>
+<footer><a href="/">Úvod</a><a href="/privacy">Ochrana súkromia</a><a href="/forget">Odpojiť účet</a><a href="${SOURCE_URL}">Zdrojový kód</a><span class="version">verzia ${escapeHtml(versionLabel(undefined, 'upravená'))}</span></footer>
 </body></html>`;
 }
 

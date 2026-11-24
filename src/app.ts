@@ -23,10 +23,11 @@ import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from '@modelconte
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import type { Config } from './config.js';
 import { isKtSite, KtClient, type KtCredentials } from './kt/client.js';
-import { registerTools } from './mcp/tools.js';
+import { registerTools, serverInstructions } from './mcp/tools.js';
 import { type AccountAuth, MCP_SCOPE, MultiUserOAuthProvider, preferredSite } from './auth/provider.js';
 import { AllowList, Keyring } from './auth/users.js';
 import { forgetPage, landingPage, privacyPage, sendPage } from './web/pages.js';
+import { BUILD } from './version.js';
 
 export interface AppDeps {
   verifyLogin: (credentials: KtCredentials) => Promise<void>;
@@ -125,7 +126,7 @@ export function createApp(config: Config, deps: AppDeps = realDeps): express.Exp
   });
 
   app.get('/healthz', (_req, res) => {
-    res.json({ status: 'ok', endpoint: mcpEndpoint.href });
+    res.json({ status: 'ok', endpoint: mcpEndpoint.href, version: BUILD.version, commit: BUILD.commit, modified: BUILD.dirty });
   });
 
   app.get('/', (_req, res) => sendPage(res, 200, landingPage(config.publicUrl, allowList.restricted), { index: true }));
@@ -177,12 +178,10 @@ export function createApp(config: Config, deps: AppDeps = realDeps): express.Exp
     const siteLanguage = sk ? 'Slovak' : 'Czech';
 
     const server = new McpServer(
-      { name: 'kaloricketabulky', version: '0.2.0' },
+      // MCP clients show this; the commit tells copies of the same version apart.
+      { name: 'kaloricketabulky', version: BUILD.commit ? `${BUILD.version}+${BUILD.commit}` : BUILD.version },
       {
-        instructions:
-          `Logs food into the user's Kalorické tabuľky diary. This user's site is ${siteName}, so food and activity names come back in ${siteLanguage}; ` +
-          `search with ${siteLanguage} terms for the best matches (the food database is the same on both sites, so the other language works too). ` +
-          'When the user gives a count rather than a weight ("3 eggs"), call get_food_portions and log a natural portion unit instead of estimating grams.',
+        instructions: serverInstructions(siteName, siteLanguage),
       },
     );
     registerTools(server, kt);

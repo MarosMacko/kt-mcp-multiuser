@@ -5,7 +5,11 @@ COPY package*.json ./
 RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
-RUN npm run build && find dist -name '*.test.js*' -delete
+COPY scripts/build-info.mjs ./scripts/
+# The image has no .git, so the commit shown on the pages comes in as a build
+# argument (docker-compose.yml passes BUILD_COMMIT through). Empty = unknown.
+ARG BUILD_COMMIT=""
+RUN BUILD_COMMIT="$BUILD_COMMIT" npm run build && find dist -name '*.test.js*' -delete
 
 # Runtime stage — production dependencies only.
 FROM node:24-alpine AS runtime

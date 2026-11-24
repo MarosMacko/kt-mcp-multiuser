@@ -14,6 +14,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { mapLimit, parseAmount, type Quantity } from './derive.js';
 
 /** The two sites: same application and food ids, separate user accounts. */
 export const SITES = {
@@ -85,6 +86,27 @@ export interface Nutrition {
   fibre: number | null;
   saturatedFat: number | null;
   salt: number | null;
+  /**
+   * Any further nutrients the site has an amount for (in practice calcium,
+   * cholesterol and phenylalanine in mg, mono-/polyunsaturated fat in g),
+   * keyed by the site's own name. Absent ones are left out.
+   */
+  other: Record<string, number>;
+  /** Vitamins and minerals the site says the food contains. The site gives no amounts for these. */
+  containsVitamins: string[];
+  containsMinerals: string[];
+}
+
+/** Macros of one diary entry, for the amount logged. */
+export interface EntryNutrition {
+  energy: number | null;
+  protein: number | null;
+  carbs: number | null;
+  fat: number | null;
+  fibre: number | null;
+  sugar: number | null;
+  saturatedFat: number | null;
+  salt: number | null;
 }
 
 export interface MealSummary {
@@ -117,6 +139,8 @@ export interface DiaryFood {
   title: string;
   /** Amount as the site displays it, e.g. "kus (40 g)" or "120 x 1 g". */
   amount: string;
+  /** The same amount as numbers; null when the site sent no amount. */
+  quantity: Quantity | null;
   energy: number | null;
   energyUnit: string;
   meal: MealId;
@@ -125,6 +149,8 @@ export interface DiaryFood {
   foodId: string | null;
   /** Whether the site lets the amount be changed (false for own foods and recipes). */
   editable: boolean;
+  /** Macros the diary itself sent for this entry, when it sent any. */
+  siteNutrition: EntryNutrition | null;
 }
 
 export interface DiaryNote {
@@ -154,6 +180,8 @@ export interface DayTotals {
   drinkTargetLitres: number | null;
   weightKg: number | null;
   weightTargetKg: number | null;
+  /** Whether the site raises the energy goal by the energy burned in activities; null when unknown. */
+  goalIncludesActivity: boolean | null;
   /**
    * Every nutrient the user tracks on the site, with its daily goal. The
    * first four (protein, carbs, fat, fibre) are always there; the rest are
@@ -220,6 +248,41 @@ export function parseCzechNumber(value: unknown): number | null {
 
 const round1 = (n: number | null) => (n === null ? null : Math.round(n * 10) / 10);
 
+/** Nutrients beyond the main eight that food records may carry (names as the site sends them). */
+const EXTRA_NUTRIENTS = [
+  'transFattyAcid', 'monoSaturated', 'polySaturated', 'cholesterol', 'sodium', 'potassium', 'calcium',
+  'magnesium', 'iron', 'zinc', 'phosphorus', 'vitaminA', 'vitaminB1', 'vitaminB2', 'vitaminB6', 'vitaminB12',
+  'vitaminC', 'vitaminD', 'vitaminE', 'folicAcid', 'water', 'alcohol', 'caffeine', 'phe',
+];
+
+/** Names out of the nutrition response's vitamin/mineral tag lists (which carry long encyclopedia texts too). */
+function tagNames(list: unknown): string[] {
+  if (!Array.isArray(list)) return [];
+  return list
+    .map(t => (t && typeof t === 'object' ? (t as Record<string, unknown>)['nameByActiveLang'] : null))
+    .filter((n): n is string => typeof n === 'string' && n.trim() !== '')
+    .map(n => n.trim());
+}
+
+/**
+ * Macros a diary entry carries on its own. Only trusted when at least one of
+ * protein, carbs or fat is non-zero: the diary's day totals are always 0, so
+ * all-zero entry fields are more likely unfilled than a glass of water.
+ */
+export function readEntryNutrition(e: Record<string, unknown>): EntryNutrition | null {
+  const n: EntryNutrition = {
+    energy: parseCzechNumber(e['energy']),
+    protein: parseCzechNumber(e['protein']),
+    carbs: parseCzechNumber(e['carbohydrate']),
+    fat: parseCzechNumber(e['fat']),
+    fibre: parseCzechNumber(e['fiber']),
+    sugar: parseCzechNumber(e['sugar']),
+    saturatedFat: parseCzechNumber(e['saturatedFattyAcid']),
+    salt: parseCzechNumber(e['salt']),
+  };
+  return (n.protein ?? 0) > 0 || (n.carbs ?? 0) > 0 || (n.fat ?? 0) > 0 ? n : null;
+}
+
 /**
  * Parses the diary page's summary panel (`/user/diary/summary/{date}/get`).
  * Every row in `items` and `itemsDynamic` pairs a display `actual` with a
@@ -259,6 +322,8 @@ export function parseDiarySummary(day: string, data: unknown): DayTotals {
     date: day,
     energy: parseCzechNumber(s['foodstuffEnergyTotal']),
     energyTarget: parseCzechNumber(balance['target']) ?? parseCzechNumber(energyItem?.['goal']),
+    // Often empty even when the diary has activities (watch imports); getDay
+    // replaces it with the sum of the diary's activity entries.
     energyBurned: parseCzechNumber(s['activityEnergyTotal']),
     energyUnit: typeof energyItem?.['unit'] === 'string' ? energyItem['unit'] : 'kcal',
     protein: nutrient('protein'),
@@ -269,6 +334,7 @@ export function parseDiarySummary(day: string, data: unknown): DayTotals {
     weightKg: parseCzechNumber(weightItem?.['actual']),
     // An unset weight goal comes back as null or "0".
     weightTargetKg: parseCzechNumber(weightItem?.['goal']) || null,
+    goalIncludesActivity: typeof balance['considerActivity'] === 'boolean' ? balance['considerActivity'] : null,
     nutrients,
   };
 }
@@ -580,6 +646,11 @@ export class KtClient {
       fibre: parseCzechNumber(f['fiber']),
       saturatedFat: parseCzechNumber(f['saturatedFattyAcid']),
       salt: parseCzechNumber(f['salt']),
+      other: Object.fromEntries(
+        EXTRA_NUTRIENTS.map(key => [key, parseCzechNumber(f[key])] as const).filter((e): e is readonly [string, number] => e[1] !== null),
+      ),
+      containsVitamins: tagNames(data['vitamins']),
+      containsMinerals: tagNames(data['minerals']),
     };
   }
 
@@ -707,12 +778,14 @@ export class KtClient {
           id: String(e['id']),
           title: String(e['title'] ?? ''),
           amount: String(e['unit'] ?? ''),
+          quantity: parseAmount(String(e['unit'] ?? '')),
           energy: parseCzechNumber(e['energy']),
           energyUnit: typeof e['energyUnit'] === 'string' ? e['energyUnit'] : 'kcal',
           meal: meal as MealId,
           isRecipe: e['isRecipe'] === true,
           foodId: typeof e['guidType'] === 'string' ? e['guidType'] : null,
           editable: e['editableUnit'] === true,
+          siteNutrition: readEntryNutrition(e),
         });
       }
     }
@@ -976,6 +1049,56 @@ export class KtClient {
     return parseDiarySummary(day, await this.authed(`/user/diary/summary/${day}/get?format=json`));
   }
 
+  /**
+   * Totals and entries of one day together. Energy burned is the sum of the
+   * diary's activity entries: the summary's own figure stays empty for
+   * activities a watch imported (a 473 kcal Garmin workout showed as 0).
+   */
+  async getDay(date: string): Promise<{ totals: DayTotals; entries: DayEntries }> {
+    const [totals, entries] = await Promise.all([this.getDayTotals(date), this.getDayEntries(date)]);
+    if (entries.activities.length > 0) {
+      totals.energyBurned = Math.round(entries.activities.reduce((sum, a) => sum + (a.energy ?? 0), 0));
+    }
+    return { totals, entries };
+  }
+
+  /**
+   * Macros for one diary entry. Uses what the diary sent when it sent
+   * anything; otherwise asks the site to scale the database food to the logged
+   * amount (cached, anonymous). Recipes and own foods have no database record
+   * to scale, so they come back null unless the diary carried their macros.
+   */
+  async getEntryNutrition(food: DiaryFood): Promise<(EntryNutrition & { source: 'diary' | 'food database' }) | null> {
+    if (food.siteNutrition) return { ...food.siteNutrition, source: 'diary' };
+    if (!food.foodId || !food.quantity || !food.editable) return null;
+    const q = food.quantity;
+    const detail = await this.getFoodDetail(food.foodId).catch(() => null);
+    if (!detail) return null;
+    // Prefer the unit the entry was logged in; fall back to the base unit and the parsed weight.
+    const byTitle = detail.units.find(u => u.title === q.unit);
+    const total = q.grams ?? q.ml;
+    const pick = byTitle ? { amount: q.count, unit: byTitle.id } : total !== null ? { amount: total, unit: baseUnitOf(detail.units) } : null;
+    if (!pick) return null;
+    const n = await this.getNutrition(food.foodId, pick.amount, pick.unit).catch(() => null);
+    if (!n) return null;
+    return {
+      energy: n.energy,
+      protein: n.protein,
+      carbs: n.carbs,
+      fat: n.fat,
+      fibre: n.fibre,
+      sugar: n.sugar,
+      saturatedFat: n.saturatedFat,
+      salt: n.salt,
+      source: 'food database',
+    };
+  }
+
+  /** getEntryNutrition for a list of foods, a few lookups at a time. */
+  async withNutrition(foods: DiaryFood[]) {
+    return mapLimit(foods, 4, async food => ({ food, nutrition: await this.getEntryNutrition(food) }));
+  }
+
   async listTemplates(): Promise<NamedItem[]> {
     return this.namedList('/user/templates/list?format=json');
   }
@@ -1121,17 +1244,14 @@ export class KtClient {
   }
 
   /**
-   * Logs a whole saved recipe into the diary.
+   * Logs a saved recipe into the diary as `portions` × the portion pseudo-unit.
    *
-   * Partial portions are deliberately not offered. The meal-add form exposes
-   * `count` against portion/percent/gram pseudo-units, but the server ignores
-   * it and logs the entire recipe whichever unit is used — measured against a
-   * 249 kcal recipe, `count` of 0.5 portions and of half the total weight both
-   * added the full 249. Rather than accept a `portions` argument that silently
-   * does nothing, log the whole recipe and let the caller log ingredients
-   * individually when they ate part of one.
+   * What the site does with the count is not settled: an earlier test on a
+   * one-portion recipe saw 0.5 portions log the whole recipe, while the form
+   * itself suggests count × one portion. The log_meal tool therefore reads the
+   * diary back and reports the energy that was actually logged.
    */
-  async logMeal(args: { mealId: string; meal: MealId; date?: string }): Promise<void> {
+  async logMeal(args: { mealId: string; meal: MealId; date?: string; portions?: number }): Promise<void> {
     const form = (await this.authed(
       `/user/meal/add/form/${encodeURIComponent(args.mealId)}?format=json`,
     )) as Record<string, unknown>;
@@ -1141,7 +1261,7 @@ export class KtClient {
     payload['diaryTimeGuid'] = args.meal;
     payload['date'] = args.date === undefined ? todayCzech() : assertCzechDate(args.date);
     payload['selectedUnitGuid'] = PORTION_UNIT;
-    payload['count'] = 1;
+    payload['count'] = args.portions ?? 1;
 
     await this.authed('/user/meal/add?format=json&=', { method: 'POST', body: payload });
   }

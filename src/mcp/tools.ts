@@ -9,7 +9,19 @@
 
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { baseUnitOf, type DayTotals, KtClient, KtError, MEALS, type MealId, shiftCzechDate, todayCzech } from '../kt/client.js';
+import {
+  baseUnitOf,
+  type DayTotals,
+  type DiaryFood,
+  type EntryNutrition,
+  KtClient,
+  KtError,
+  MEALS,
+  type MealId,
+  shiftCzechDate,
+  todayCzech,
+} from '../kt/client.js';
+import { dayCompleteness, likelyDuplicates, mapLimit, parseStatisticSummary, searchFallbacks } from '../kt/derive.js';
 
 const MEAL_IDS = Object.keys(MEALS) as [MealId, ...MealId[]];
 
@@ -40,6 +52,39 @@ async function resolveUnit(kt: KtClient, foodId: string, unitId?: string): Promi
     );
   }
   return unit;
+}
+
+/**
+ * One diary food as the model sees it: the display amount plus the same amount
+ * as numbers, and the macros for what was logged (null when the site has none
+ * to give, e.g. for recipes and own foods).
+ */
+function foodRow(food: DiaryFood, nutrition: (EntryNutrition & { source: string }) | null) {
+  const { siteNutrition: _site, quantity, ...rest } = food;
+  return {
+    ...rest,
+    meal: MEALS[food.meal],
+    unit_count: quantity?.count ?? null,
+    grams: quantity?.grams ?? null,
+    ml: quantity?.ml ?? null,
+    nutrition,
+  };
+}
+
+const r1 = (n: number) => Math.round(n * 10) / 10;
+
+const DUPLICATE_NOTE =
+  'Sports watches linked to the site (Garmin and others) import workouts into the diary on their own, as entries like "Garmin aktivita (Běh)". ' +
+  'So the call refuses when an activity of similar length is already on that day, and returns it as possible_duplicate; log anyway with force: true only if the user confirms it is a different workout.';
+
+const forceDescription = 'Log even if an activity of similar length is already on that day. Only after the user confirmed it is not a duplicate.';
+
+function duplicateRefusal(duplicates: Array<{ id: string; title: string; duration: string; energy: number | null }>) {
+  return {
+    logged: false,
+    possible_duplicate: duplicates,
+    hint: 'An activity of similar length is already in the diary, possibly imported from a watch. Ask the user; call again with force: true if it is a different workout.',
+  };
 }
 
 /** Tool results are text; JSON keeps them unambiguous for the model. */
@@ -74,6 +119,23 @@ function guard<Args>(name: string, fn: (args: Args) => Promise<ReturnType<typeof
   };
 }
 
+/**
+ * What every client is told once per connection: the working rules that cut
+ * across tools. Per-tool detail stays in the tool descriptions.
+ */
+export function serverInstructions(siteName: string, siteLanguage: string): string {
+  return [
+    `Reads and writes the user's food diary on ${siteName}. Food and activity names come back in ${siteLanguage}; search in ${siteLanguage} (the food database is shared with the other site, so Czech/Slovak both work). Search by name and brand only, never with numbers or nutrient words.`,
+    'Dates are dd.MM.yyyy in Czech time. The site accepts writes only for the last 12 months.',
+    'Logging: when the user gives a count ("3 eggs"), call get_food_portions and log a natural portion unit instead of estimating grams. Every log_* call writes to the real diary; if a call errors or times out, check get_day_entries before retrying so nothing is logged twice. Confirm estimates (e.g. a dish from a photo) with the user before writing.',
+    'Recipes: log_meal takes the portions eaten; the recipe list shows how many portions a recipe makes. Check logged_energy in the result. For a dish not in the database (takeout, restaurant), log_own_food writes a one-off entry; create_meal saves a recipe from database foods for something eaten again. When estimating own-food values, include salt and saturated fat, not just energy and macros.',
+    'Drinks: water, tea, coffee and milk count toward the drinking goal (get_day_progress.drinks) when logged with log_food in millilitres; offer to log them.',
+    'Activities: watches linked to the site (Garmin etc.) import workouts by themselves. Before logging a workout, check get_day_entries; log_activity and log_custom_activity refuse a likely duplicate unless force is set.',
+    'Reading: get_day_progress for today against the goals; get_day_entries for what was eaten, with macros per item; get_period_overview for daily totals and averages over up to 92 days (flags partial days, which should not be read as real low-intake days); get_entries_range for item-level detail over up to 31 days (diet analyses, lab results); get_day_summary for basal metabolism and the activity factor. Goals are read-only: the user changes them on the site.',
+    'Nutrition advice is not medical advice; say so when the user asks about health conditions or lab results.',
+  ].join('\n');
+}
+
 export function registerTools(server: McpServer, kt: KtClient): void {
   server.registerTool(
     'search_food',
@@ -82,19 +144,45 @@ export function registerTools(server: McpServer, kt: KtClient): void {
       description:
         'Find foods in the Kalorické tabulky database by name or barcode. Call this first whenever the user mentions eating something, to get the food id the other tools need. ' +
         'The food database is the same on kaloricketabulky.cz and .sk: search in the language of the user\'s site (see the server instructions), Czech ("vejce") or Slovak ("vajce"), not English. ' +
-        'A 13-digit EAN barcode also works and resolves to the exact product.',
+        'A 13-digit EAN barcode also works and resolves to the exact product. ' +
+        'Search by name and brand only ("skyr natur", "skyr pilos"); numbers and nutrient words ("42 g bílkovin") make the site find nothing. ' +
+        'If the query finds nothing, shorter versions of it are tried automatically and matched_query says which one answered. ' +
+        'Set with_macros when choosing between products by protein, fibre or fat.',
       inputSchema: {
-        query: z.string().min(1).describe('Food name in Czech or Slovak, or a 13-digit EAN barcode.'),
+        query: z.string().min(1).describe('Food name (and brand) in Czech or Slovak, or a 13-digit EAN barcode.'),
         limit: z.number().int().min(1).max(25).optional().describe('Maximum results to return. Defaults to 10.'),
+        with_macros: z
+          .boolean()
+          .optional()
+          .describe('Also return protein, carbs, fat, fibre, sugar and salt per 100 g/ml for the first 10 results. Slower; defaults to false.'),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
-    guard('search_food', async ({ query, limit }) => {
-      const hits = await kt.search(query, limit ?? 10);
-      if (hits.length === 0) {
-        return json({ results: [], hint: 'No matches. Try a different or more general term, in Czech or Slovak.' });
+    guard('search_food', async ({ query, limit, with_macros }) => {
+      let hits: Awaited<ReturnType<KtClient['search']>> = [];
+      let matched = query;
+      for (const q of searchFallbacks(query)) {
+        hits = await kt.search(q, limit ?? 10);
+        matched = q;
+        if (hits.length > 0) break;
       }
-      return json({ results: hits });
+      if (hits.length === 0) {
+        return json({ results: [], hint: 'No matches, also for shorter versions of the query. Try another word for the food, in Czech or Slovak.' });
+      }
+      const results = with_macros
+        ? await mapLimit(hits, 4, async (hit, i) => {
+            if (i >= 10) return hit;
+            const detail = await kt.getFoodDetail(hit.id).catch(() => null);
+            const n = detail ? await kt.getNutrition(hit.id, 100, baseUnitOf(detail.units)).catch(() => null) : null;
+            return {
+              ...hit,
+              per100: n && {
+                protein: n.protein, carbs: n.carbs, fat: n.fat, fibre: n.fibre, sugar: n.sugar, saturated_fat: n.saturatedFat, salt: n.salt,
+              },
+            };
+          })
+        : hits;
+      return json({ matched_query: matched, ...(matched !== query ? { note: `Nothing matched "${query}"; these are results for "${matched}".` } : {}), results });
     }),
   );
 
@@ -129,7 +217,9 @@ export function registerTools(server: McpServer, kt: KtClient): void {
       title: 'Get nutrition for a quantity',
       description:
         'Calculate calories and macros for a specific quantity of a food, without logging anything. ' +
-        'Use this when the user asks what something contains, or to confirm a portion before logging it. The site does the scaling, so the numbers match its own diary exactly.',
+        'Use this when the user asks what something contains, or to confirm a portion before logging it. The site does the scaling, so the numbers match its own diary exactly. ' +
+        '`other` holds further amounts where the site has them (calcium, cholesterol and phe in mg; monoSaturated/polySaturated fat in g); a missing one means unknown, not zero. ' +
+        'containsVitamins/containsMinerals only say which ones the food is a source of: the site has no amounts for vitamins, iron, magnesium and the like, so estimate those from general knowledge and say so.',
       inputSchema: {
         food_id: z.string().min(1).describe('The food id returned by search_food.'),
         amount: z.number().positive().describe('How many units. With the base unit this is grams for solid food or millilitres for drinks.'),
@@ -220,7 +310,7 @@ export function registerTools(server: McpServer, kt: KtClient): void {
         meal_id: id,
         title,
         total_energy: created && created.energy !== null ? `${created.energy} ${created.energyUnit}` : null,
-        note: 'Energy is for the whole recipe. Log it with log_meal.',
+        note: 'Energy is for the whole recipe. Log it with log_meal, passing the portions eaten.',
       });
     }),
   );
@@ -244,25 +334,42 @@ export function registerTools(server: McpServer, kt: KtClient): void {
     {
       title: 'Log a saved recipe to the diary',
       description:
-        "Log one of the user's saved recipes into their diary as a single entry. Find the recipe id with list_my_meals first. This writes to their real diary. " +
-        'The whole recipe is always logged — the site provides no way to log a fraction of one. If the user ate only part of a recipe, log the individual ingredients with log_food instead.',
+        "Log one of the user's saved recipes into their diary as a single entry. Find the recipe id with list_my_meals first; it also shows how many portions the recipe makes. This writes to their real diary. " +
+        'Pass `portions` for how much of the recipe was eaten, e.g. 1 of a lasagne that makes 8. ' +
+        'The result reads the diary back: `logged_energy` is what the site actually recorded and `expected_energy` what the portions should give. ' +
+        'If they differ, tell the user, delete the entry with delete_diary_entry, and log the eaten share of the ingredients with log_food instead.',
       inputSchema: {
         meal_id: z.string().min(1).describe('Recipe id from list_my_meals.'),
         meal: z.enum(MEAL_IDS).describe(mealDescription),
+        portions: z.number().positive().max(100).optional().describe('Portions eaten, e.g. 1, 0.5 or 2. Defaults to 1.'),
         date: z.string().optional().describe(dateDescription),
       },
       annotations: { destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    guard('log_meal', async ({ meal_id, meal, date }) => {
-      await kt.logMeal({ mealId: meal_id, meal, date });
-      // Same as log_food: the diary entry exists, so the read-back may not fail the tool.
-      const logged = (await kt.listMeals().catch(() => [])).find(m => m.id === meal_id);
+    guard('log_meal', async ({ meal_id, meal, portions, date }) => {
+      const day = date ?? todayCzech();
+      const before = new Set((await kt.getDayEntries(day)).foods.map(f => f.id));
+      await kt.logMeal({ mealId: meal_id, meal, date: day, portions });
+      // Same as log_food: the diary entry exists, so the read-backs may not fail the tool.
+      const recipe = (await kt.listMeals().catch(() => [])).find(m => m.id === meal_id);
+      const added = (await kt.getDayEntries(day).catch(() => null))?.foods.filter(f => !before.has(f.id)) ?? [];
+      const loggedEnergy = added.length > 0 ? added.reduce((sum, f) => sum + (f.energy ?? 0), 0) : null;
+      const expected = recipe?.energy != null && recipe.portions > 0 ? r1((recipe.energy / recipe.portions) * (portions ?? 1)) : null;
+      const mismatch = loggedEnergy !== null && expected !== null && Math.abs(loggedEnergy - expected) > Math.max(5, expected * 0.05);
       return json({
         logged: true,
-        recipe: logged?.title ?? meal_id,
-        energy: logged && logged.energy !== null ? `${logged.energy} ${logged.energyUnit}` : null,
+        recipe: recipe?.title ?? meal_id,
+        recipe_portions: recipe?.portions ?? null,
+        recipe_total_energy: recipe?.energy ?? null,
+        portions: portions ?? 1,
+        expected_energy: expected,
+        logged_energy: loggedEnergy,
+        entry_ids: added.map(f => f.id),
         meal: MEALS[meal],
-        date: date ?? todayCzech(),
+        date: day,
+        ...(mismatch
+          ? { warning: `The site recorded ${loggedEnergy} kcal, not the ${expected} kcal the portions give. Tell the user and correct the entry.` }
+          : {}),
       });
     }),
   );
@@ -319,15 +426,19 @@ export function registerTools(server: McpServer, kt: KtClient): void {
       description:
         "Write an activity from the database into the user's diary for a given duration. The site calculates the calories burned from the user's own weight, so do not estimate them. " +
         'Find the activity id with search_activity first. This writes to their real diary. ' +
-        'If the user already knows the calories (from a watch or a fitness app), use log_custom_activity instead.',
+        'If the user already knows the calories (from a watch or a fitness app), use log_custom_activity instead. ' +
+        DUPLICATE_NOTE,
       inputSchema: {
         activity_id: z.string().min(1).describe('Activity id from search_activity.'),
         minutes: z.number().positive().max(1440).describe('Duration in minutes.'),
         date: z.string().optional().describe('Date in dd.MM.yyyy format (Czech style). Omit for today.'),
+        force: z.boolean().optional().describe(forceDescription),
       },
       annotations: { destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    guard('log_activity', async ({ activity_id, minutes, date }) => {
+    guard('log_activity', async ({ activity_id, minutes, date, force }) => {
+      const duplicates = force ? [] : likelyDuplicates(await kt.getDayActivities(date), minutes);
+      if (duplicates.length > 0) return json(duplicateRefusal(duplicates));
       await kt.logActivity({ activityId: activity_id, minutes, date });
       // Logged; as with food, a failed read-back must not turn into a retry.
       const activities = await kt.getDayActivities(date).catch(() => null);
@@ -341,16 +452,20 @@ export function registerTools(server: McpServer, kt: KtClient): void {
       title: 'Log an activity with known calories',
       description:
         "Write an activity with a calorie figure the user supplies, typically from a sports watch or fitness app (\"Garmin says I burned 450 kcal on a 50-minute run\"). " +
-        'Use log_activity instead when the user did not give a calorie figure. This writes to their real diary.',
+        'Use log_activity instead when the user did not give a calorie figure. This writes to their real diary. ' +
+        DUPLICATE_NOTE,
       inputSchema: {
         title: z.string().min(1).describe('Short name for the activity, e.g. "Běh podle hodinek".'),
         energy_kcal: z.number().positive().max(10000).describe('Total calories burned, in kcal.'),
         minutes: z.number().positive().max(1440).describe('Duration in minutes.'),
         date: z.string().optional().describe('Date in dd.MM.yyyy format (Czech style). Omit for today.'),
+        force: z.boolean().optional().describe(forceDescription),
       },
       annotations: { destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    guard('log_custom_activity', async ({ title, energy_kcal, minutes, date }) => {
+    guard('log_custom_activity', async ({ title, energy_kcal, minutes, date, force }) => {
+      const duplicates = force ? [] : likelyDuplicates(await kt.getDayActivities(date), minutes);
+      if (duplicates.length > 0) return json(duplicateRefusal(duplicates));
       await kt.logCustomActivity({ title, energyKcal: energy_kcal, minutes, date });
       const activities = await kt.getDayActivities(date).catch(() => null);
       return json({ logged: true, date: date ?? todayCzech(), activities_that_day: activities });
@@ -362,9 +477,11 @@ export function registerTools(server: McpServer, kt: KtClient): void {
     {
       title: 'List diary entries for a day',
       description:
-        "List every entry in the user's diary for one day: foods and recipes grouped by meal, activities, and notes, each with its entry id. Foods also carry their amount, calories, the database food_id and whether the amount can be edited. " +
-        'Use this when the user asks what exactly they logged, to find an entry to edit, move or delete, and before logging to avoid duplicating something already there. ' +
-        'For totals and remaining calories use get_day_summary instead.',
+        "List every entry in the user's diary for one day: foods and recipes by meal, activities, and notes, each with its entry id. " +
+        'Foods carry the amount as displayed plus unit_count and grams/ml as numbers, calories, the database food_id, whether the amount can be edited, ' +
+        'and `nutrition` (energy, protein, carbs, fat, fibre, sugar, saturated fat, salt) for the amount logged. nutrition is null for recipes and own foods. ' +
+        'Use this for "what did I log", "where does my fat come from today", to find an entry to edit, move or delete, and before logging to avoid duplicates. ' +
+        'For totals against goals use get_day_progress; for many days use get_entries_range.',
       inputSchema: {
         date: z.string().optional().describe('Date in dd.MM.yyyy format (Czech style). Omit for today.'),
       },
@@ -374,9 +491,77 @@ export function registerTools(server: McpServer, kt: KtClient): void {
       const { foods, activities, notes } = await kt.getDayEntries(date);
       return json({
         date: date ?? todayCzech(),
-        foods: foods.map(f => ({ ...f, meal: MEALS[f.meal] })),
+        foods: (await kt.withNutrition(foods)).map(({ food, nutrition }) => foodRow(food, nutrition)),
         activities,
         notes: notes.map(n => ({ ...n, meal: n.meal === null ? 'whole day' : MEALS[n.meal] })),
+      });
+    }),
+  );
+
+  server.registerTool(
+    'get_entries_range',
+    {
+      title: 'Every diary entry over several days',
+      description:
+        'Every food logged over up to 31 days, with grams/ml and macros per entry, plus a by_food summary (times eaten, total amount, energy and macros) sorted by energy. ' +
+        'Use this for questions that need item-level detail over time: comparing the diet with lab results, "what gives me the most sugar", "how much fish/vegetables did I eat this month", ' +
+        'or anything get_period_overview (daily totals only) cannot answer. Entries without nutrition (recipes, own foods) are counted in energy only.',
+      inputSchema: {
+        end_date: z.string().optional().describe('Last day of the period, dd.MM.yyyy. Omit for today.'),
+        days: z.number().int().min(1).max(31).optional().describe('Number of days ending with end_date. Defaults to 7.'),
+        include_activities: z.boolean().optional().describe('Also list each day\'s activities. Defaults to false.'),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    guard('get_entries_range', async ({ end_date, days, include_activities }) => {
+      const end = end_date ?? todayCzech();
+      const dates = Array.from({ length: days ?? 7 }, (_, i) => shiftCzechDate(end, i - (days ?? 7) + 1));
+      // Two days at a time, each with up to four (cached) food lookups.
+      const perDay = await mapLimit(dates, 2, async date => {
+        const entries = await kt.getDayEntries(date);
+        return { date, entries, foods: await kt.withNutrition(entries.foods) };
+      });
+
+      type Sum = { title: string; food_id: string | null; times: number; grams: number; ml: number; energy: number; protein: number; carbs: number; fat: number; fibre: number; sugar: number; saturated_fat: number; salt: number; without_nutrition: number };
+      const byFood = new Map<string, Sum>();
+      for (const { foods } of perDay) {
+        for (const { food, nutrition } of foods) {
+          const key = food.foodId ?? food.title;
+          const s = byFood.get(key) ?? { title: food.title, food_id: food.foodId, times: 0, grams: 0, ml: 0, energy: 0, protein: 0, carbs: 0, fat: 0, fibre: 0, sugar: 0, saturated_fat: 0, salt: 0, without_nutrition: 0 };
+          s.times++;
+          s.grams += food.quantity?.grams ?? 0;
+          s.ml += food.quantity?.ml ?? 0;
+          s.energy += food.energy ?? 0;
+          if (nutrition) {
+            s.protein += nutrition.protein ?? 0;
+            s.carbs += nutrition.carbs ?? 0;
+            s.fat += nutrition.fat ?? 0;
+            s.fibre += nutrition.fibre ?? 0;
+            s.sugar += nutrition.sugar ?? 0;
+            s.saturated_fat += nutrition.saturatedFat ?? 0;
+            s.salt += nutrition.salt ?? 0;
+          } else {
+            s.without_nutrition++;
+          }
+          byFood.set(key, s);
+        }
+      }
+      const rounded = [...byFood.values()]
+        .sort((a, b) => b.energy - a.energy)
+        .map(s => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, typeof v === 'number' && k !== 'times' && k !== 'without_nutrition' ? r1(v) : v])));
+
+      return json({
+        from: dates[0],
+        to: end,
+        days: perDay.map(({ date, entries, foods }) => ({
+          date,
+          foods: foods.map(({ food, nutrition }) => {
+            const { id: _id, editable: _e, isRecipe: _r, energyUnit: _u, ...row } = foodRow(food, nutrition);
+            return row;
+          }),
+          ...(include_activities ? { activities: entries.activities.map(({ id: _id, ...a }) => a) } : {}),
+        })),
+        by_food: rounded,
       });
     }),
   );
@@ -603,20 +788,29 @@ export function registerTools(server: McpServer, kt: KtClient): void {
       description:
         'Totals for a run of days, one row per day (energy eaten, target, burned by activity, protein, carbs, fat, litres drunk, and every nutrient the user tracks) plus averages over the logged days. ' +
         "The averages include each tracked nutrient's daily goal (taken from the last day of the period) and how the average compares to it. " +
-        'Use this for "how was my week", "average protein this month", "am I hitting my fibre goal" and similar questions. Days with nothing logged are listed but left out of the averages.',
+        'Use this for "how was my week", "average protein this month", "am I hitting my fibre goal" and similar questions. ' +
+        'Each day says whether it is logged, which meals have food (meals_logged) and whether it looks partial (under half the energy goal, or two of breakfast/lunch/dinner missing), with the reasons. ' +
+        'Days with nothing logged are left out of the averages; partial days too when exclude_partial_days is set. Point out partial days to the user rather than treating them as real low-intake days. ' +
+        'For per-item detail use get_entries_range.',
       inputSchema: {
         end_date: z.string().optional().describe('Last day of the period, dd.MM.yyyy. Omit for today.'),
-        days: z.number().int().min(1).max(31).optional().describe('Number of days ending with end_date. Defaults to 7.'),
+        days: z.number().int().min(1).max(92).optional().describe('Number of days ending with end_date, up to 92 (about three months). Defaults to 7.'),
+        exclude_partial_days: z.boolean().optional().describe('Leave partial days out of the averages too. Defaults to false.'),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
-    guard('get_period_overview', async ({ end_date, days }) => {
+    guard('get_period_overview', async ({ end_date, days, exclude_partial_days }) => {
       const end = end_date ?? todayCzech();
       const count = days ?? 7;
-      const rows: DayTotals[] = [];
-      // Sequential on purpose: keep the request rate human.
-      for (let i = count - 1; i >= 0; i--) rows.push(await kt.getDayTotals(shiftCzechDate(end, -i)));
-      const logged = rows.filter(r => (r.energy ?? 0) > 0);
+      const dates = Array.from({ length: count }, (_, i) => shiftCzechDate(end, i - count + 1));
+      // A few days at a time: fast enough for three months, still a human-ish request rate.
+      const fetched = await mapLimit(dates, 3, d => kt.getDay(d));
+      const status = fetched.map(({ totals, entries }) => {
+        const mealsLogged = [...new Set(entries.foods.map(f => f.meal))].sort();
+        return { mealsLogged, ...dayCompleteness(totals.energy, totals.energyTarget, mealsLogged) };
+      });
+      const rows: DayTotals[] = fetched.map(f => f.totals);
+      const logged = rows.filter((_, i) => status[i]!.logged && !(exclude_partial_days && status[i]!.partial));
       const avg = (pick: (r: DayTotals) => number | null) =>
         logged.length === 0 ? null : Math.round((logged.reduce((sum, r) => sum + (pick(r) ?? 0), 0) / logged.length) * 10) / 10;
       // Goals can change over a period; the latest day's are the ones the user is working to now.
@@ -636,11 +830,17 @@ export function registerTools(server: McpServer, kt: KtClient): void {
         from: rows[0]?.date,
         to: end,
         // Per-day nutrients as {code: amount}; titles, units and goals are in the averages.
-        days: rows.map(({ nutrients, ...r }) => ({
+        days: rows.map(({ nutrients, goalIncludesActivity: _g, ...r }, i) => ({
           ...r,
+          logged: status[i]!.logged,
+          meals_logged: status[i]!.mealsLogged,
+          ...(status[i]!.partial ? { partial: true, partial_reasons: status[i]!.reasons } : {}),
           nutrients: Object.fromEntries(nutrients.map(n => [n.code, n.actual])),
         })),
-        logged_days: logged.length,
+        meal_ids: MEALS,
+        logged_days: status.filter(s => s.logged).length,
+        partial_days: rows.filter((_, i) => status[i]!.partial).map(r => r.date),
+        days_in_averages: logged.length,
         averages_over_logged_days: {
           energy: avg(r => r.energy),
           energy_target: avg(r => r.energyTarget),
@@ -754,17 +954,30 @@ export function registerTools(server: McpServer, kt: KtClient): void {
   server.registerTool(
     'get_day_summary',
     {
-      title: 'Get a day summary',
+      title: 'Get a day summary with energy expenditure',
       description:
-        'Read back totals from the diary for one day — use this when the user asks what they have eaten, how many calories they have left, or how a day went. ' +
-        'For progress against the daily goals for protein, carbs, fat, fibre and other nutrients, use get_day_progress instead.',
+        "The site's energy picture for one day: eaten, goal, burned by activities, drinks, weight, BMI, and the user's basal metabolic rate and activity factor as the site computes them. " +
+        'Use this when talking about energy expenditure or whether the calorie goal makes sense (basal × activity factor ≈ daily need before workouts). ' +
+        'For progress against nutrient goals use get_day_progress; for what was eaten use get_day_entries.',
       inputSchema: {
-        date: z.string().optional().describe(dateDescription),
+        date: z.string().optional().describe('Date in dd.MM.yyyy format (Czech style). Omit for today.'),
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     guard('get_day_summary', async ({ date }) => {
-      return json({ date: date ?? todayCzech(), summary: await kt.getDaySummary(date) });
+      const s = parseStatisticSummary(await kt.getDaySummary(date));
+      return json({
+        date: date ?? todayCzech(),
+        energy: { unit: s.energyUnit, eaten: s.eaten, goal: s.goal, burned_by_activities: s.burnedByActivities },
+        metabolism: {
+          basal_kcal: s.basal,
+          activity_factor: s.activityFactor,
+          activity_factor_kcal: s.activityFactorEnergy,
+          note: 'basal_kcal is the resting rate; activity_factor_kcal is what the site adds for everyday activity, before logged workouts.',
+        },
+        drinks: { unit: 'l', actual: s.drinkLitres, goal: s.drinkGoalLitres },
+        body: { weight_kg: s.weightKg, weight_goal_kg: s.weightGoalKg, bmi: s.bmi, bmi_category: s.bmiCategory },
+      });
     }),
   );
 
@@ -775,6 +988,8 @@ export function registerTools(server: McpServer, kt: KtClient): void {
       description:
         "Compare one day's intake with the user's daily goals set on the site: energy, protein, carbs, fat, fibre, every other nutrient the user tracks (e.g. sugar, salt, saturated fat, calcium), drinks and weight. " +
         'Each nutrient comes with actual, goal, remaining (negative once over the goal) and percent. ' +
+        'energy.burned sums the day\'s activity entries, watch imports included; net = eaten − burned. goal_includes_activity says whether the site raises the goal for activities (null when it does not say), ' +
+        'so on a training day with false, the user may need more than the goal. ' +
         'Use this for "how much protein do I still need today", "am I over on sugar" or when suggesting what to eat next to hit the goals. ' +
         'Goals are read-only here; the user changes them on the site.',
       inputSchema: {
@@ -783,7 +998,7 @@ export function registerTools(server: McpServer, kt: KtClient): void {
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     guard('get_day_progress', async ({ date }) => {
-      const t = await kt.getDayTotals(date ?? todayCzech());
+      const { totals: t } = await kt.getDay(date ?? todayCzech());
       // Two decimals: one would round 2.98 l of drinks to 3.
       const remaining = (goal: number | null, actual: number | null) =>
         goal === null || actual === null ? null : Math.round((goal - actual) * 100) / 100;
@@ -793,7 +1008,9 @@ export function registerTools(server: McpServer, kt: KtClient): void {
           unit: t.energyUnit,
           eaten: t.energy,
           burned: t.energyBurned,
+          net: t.energy === null ? null : t.energy - (t.energyBurned ?? 0),
           goal: t.energyTarget,
+          goal_includes_activity: t.goalIncludesActivity,
           remaining: remaining(t.energyTarget, t.energy),
         },
         nutrients: t.nutrients,

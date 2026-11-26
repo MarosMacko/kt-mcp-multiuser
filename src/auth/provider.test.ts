@@ -117,6 +117,22 @@ test('forgetUser removes every token of one account only', async () => {
   }
 });
 
+test('activeUsers counts accounts with an unexpired token, each once', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'kt-provider-'));
+  try {
+    const file = join(dir, 'oauth-state.json');
+    const key = randomBytes(32);
+    writeLegacyState(file, key);
+    const p = provider(file, key); // migration drops the expired and orphaned tokens
+    assert.equal(p.activeUsers(), 1, 'one account, two tokens');
+    assert.equal(p.activeUsers(Date.now() + 60 * DAY), 0, 'nobody once every token has expired');
+    p.forgetUser(new Keyring(key).userKey(EMAIL));
+    assert.equal(p.activeUsers(), 0, 'a disconnected account is not counted');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('removing an e-mail from the allowlist revokes its tokens', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'kt-provider-'));
   try {

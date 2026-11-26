@@ -1,5 +1,7 @@
 # kt-mcp-multiuser: Kalorické tabuľky pre AI asistenta
 
+[![Používatelia na kt.marosm.com](https://img.shields.io/endpoint?url=https%3A%2F%2Fkt.marosm.com%2Fbadge%2Fusers.json&label=pou%C5%BE%C3%ADvatelia%20na%20kt.marosm.com)](https://kt.marosm.com)
+
 [MCP](https://modelcontextprotocol.io) server, ktorý prepojí AI asistenta (Claude, ChatGPT, Claude Code, VS Code…)
 s tvojím jedálničkom na **kaloricketabulky.sk** alebo **kaloricketabulky.cz**.
 
@@ -191,6 +193,7 @@ AI asistent ──OAuth 2.1 + MCP/HTTPS──► kt-mcp ──JSESSIONID──�
 | `/authorize`, `/token`, `/register`, `/revoke` | OAuth: authorization code + PKCE, dynamická registrácia klientov, rotácia refresh tokenov |
 | `/`, `/privacy`, `/forget` | Úvodná stránka, ochrana súkromia, odpojenie účtu |
 | `/healthz` | Kontrola, že server beží, a jeho verzia s commitom |
+| `/badge/users.json` | Počet pripojených účtov (s platným tokenom) pre [shields.io odznak](https://shields.io/badges/endpoint-badge); len číslo, nikdy kto |
 
 ```
 src/

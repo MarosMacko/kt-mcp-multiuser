@@ -77,7 +77,7 @@ Finish with `./scripts/verify-deployment.sh` and `./scripts/security-audit.sh` a
 
 ```
 src/config.ts         every environment variable (documented in .env.example)
-src/app.ts            routes: /mcp, OAuth (SDK router), /, /privacy, /forget, /healthz
+src/app.ts            routes: /mcp, OAuth (SDK router), /, /privacy, /forget, /healthz, /badge/users.json
 src/auth/provider.ts  OAuth provider: consent, tokens, refresh, forget, sweep, v1→v2 state migration
 src/auth/users.ts     AllowList, CredentialBox (AES-256-GCM), Keyring (hashes, HMAC, HKDF), LoginLimiter
 src/kt/client.ts      kaloricketabulky.cz/.sk client (undocumented API, throws on unexpected shapes)

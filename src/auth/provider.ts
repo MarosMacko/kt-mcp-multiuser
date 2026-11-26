@@ -406,6 +406,19 @@ export class MultiUserOAuthProvider implements OAuthServerProvider {
     return total;
   }
 
+  /**
+   * How many different accounts hold a token that has not expired yet: people who signed in within the
+   * refresh-token lifetime and have not disconnected. Only the number leaves the server (the public badge).
+   */
+  activeUsers(now = Date.now()): number {
+    const state = this.store.read();
+    const users = new Set<string>();
+    for (const tokens of [state.accessTokens, state.refreshTokens]) {
+      for (const token of Object.values(tokens)) if (token.expiresAt > now) users.add(token.userKey);
+    }
+    return users.size;
+  }
+
   /** The "disconnect" page: proves ownership with a site login, then forgets the account. */
   async forgetWithLogin(rawEmail: string, password: string, site: KtSite, ip: string): Promise<ForgetResult> {
     const email = normaliseEmail(rawEmail);

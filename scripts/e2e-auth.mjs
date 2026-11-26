@@ -123,6 +123,12 @@ try {
   const noAuth = await post('/mcp', '{}', { 'Content-Type': 'application/json' });
   check('/mcp without token is 401', noAuth.status === 401, noAuth.headers.get('www-authenticate') ?? '');
 
+  const badgeUsers = async () => (await (await fetch(`${base}/badge/users.json`)).json()).message;
+  const badge = await fetch(`${base}/badge/users.json`);
+  const badgeBody = await badge.json();
+  check('user badge is a shields.io endpoint, 0 before anyone signs in',
+    badge.status === 200 && badgeBody.schemaVersion === 1 && badgeBody.message === '0', JSON.stringify(badgeBody));
+
   for (const uri of [
     'https://evil.example/cb',
     'https://chatgpt.com.evil.example/connector/oauth/abc',
@@ -180,6 +186,7 @@ try {
   const { res: ok, tokenRes, tokens } = await a.signIn('  Friend@Example.com ');
   check('correct sign-in redirects with code', ok.status === 302 && (ok.headers.get('location') ?? '').startsWith(REDIRECT));
   check('code exchanged for tokens', tokenRes.status === 200 && !!tokens.access_token, `expires_in=${tokens.expires_in}`);
+  check('user badge counts the signed-in account', (await badgeUsers()) === '1');
 
   const stateText = readFileSync(join(open.dir, 'oauth-state.json'), 'utf8');
   const state = JSON.parse(stateText);
@@ -240,12 +247,14 @@ try {
   const b = await oauthClient('http://localhost:33418/callback');
   const second = (await b.signIn()).tokens;
   check('second client for the same account', !!second.access_token);
+  check('user badge counts an account with two clients once', (await badgeUsers()) === '1');
 
   const bye = await rpc(tokens2.access_token, 'tools/call', { name: 'disconnect_account', arguments: {} });
   check('disconnect_account tool succeeds', bye.status === 200 && !bye.body?.result?.isError);
   check('disconnect revokes this client', (await rpc(tokens2.access_token, 'tools/list')).status === 401);
   check('disconnect revokes the other client too', (await rpc(second.access_token, 'tools/list')).status === 401);
   check('disconnect revokes refresh tokens', (await b.refresh(second.refresh_token)).status === 400);
+  check('user badge drops a disconnected account', (await badgeUsers()) === '0');
 
   const again = (await a.signIn()).tokens;
   const forgetBad = await post('/forget', form({ email: EMAIL, password: 'nope' }), { 'Content-Type': 'application/x-www-form-urlencoded' });

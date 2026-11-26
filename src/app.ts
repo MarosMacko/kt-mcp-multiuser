@@ -10,6 +10,7 @@
  *   GET /privacy                                privacy notice
  *   GET|POST /forget                            disconnect an account and delete its data
  *   GET /healthz                                liveness, unauthenticated
+ *   GET /badge/users.json                       number of connected accounts, as a shields.io endpoint badge
  *
  * Kept separate from the entrypoint so tests can build it with a stubbed
  * login check instead of a real Kalorické tabuľky account.
@@ -127,6 +128,12 @@ export function createApp(config: Config, deps: AppDeps = realDeps): express.Exp
 
   app.get('/healthz', (_req, res) => {
     res.json({ status: 'ok', endpoint: mcpEndpoint.href, version: BUILD.version, commit: BUILD.commit, modified: BUILD.dirty });
+  });
+
+  // https://shields.io/badges/endpoint-badge — the README shows it. Only a count, never who.
+  app.get('/badge/users.json', (_req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.json({ schemaVersion: 1, label: 'users', message: String(provider.activeUsers()), color: 'blue' });
   });
 
   app.get('/', (_req, res) => sendPage(res, 200, landingPage(config.publicUrl, allowList.restricted), { index: true }));

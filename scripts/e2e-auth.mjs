@@ -26,7 +26,7 @@ const form = obj => new URLSearchParams(obj).toString();
 let ipCounter = 10;
 const freshIp = () => `203.0.113.${ipCounter++}`;
 
-async function startServer({ allowedUsersFile = null } = {}) {
+async function startServer({ allowedUsersFile = null, publicUserCount = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'kt-e2e-'));
   const config = {
     publicUrl: new URL('https://kt.test'),
@@ -41,6 +41,7 @@ async function startServer({ allowedUsersFile = null } = {}) {
     allowedOrigins: CLIENT_ORIGINS,
     trustProxyHops: 1,
     maxFailedLoginsPerHour: 60,
+    publicUserCount,
     operator: { name: 'Test Operator', contact: 'ops@example.com' },
   };
   const app = createApp(config, {
@@ -114,7 +115,7 @@ async function startServer({ allowedUsersFile = null } = {}) {
 }
 
 // ───────────────────────────── open mode (no allowlist) ─────────────────────────────
-const open = await startServer();
+const open = await startServer({ publicUserCount: true });
 try {
   const { base, post, register, oauthClient, rpc } = open;
   const meta = await (await fetch(`${base}/.well-known/oauth-protected-resource/mcp`)).json();
@@ -274,6 +275,7 @@ const allowFile = join(listDir, 'allowed-users');
 writeFileSync(allowFile, `# test\n${EMAIL}\n`);
 const restricted = await startServer({ allowedUsersFile: allowFile });
 try {
+  check('user badge is off unless PUBLIC_USER_COUNT is set', (await fetch(`${restricted.base}/badge/users.json`)).status === 404);
   const a = await restricted.oauthClient();
   check('allowlist: stranger refused', (await a.authorize({ email: 'stranger@example.com', password: GOOD_PASSWORD })).status === 403);
   const { tokens } = await a.signIn();

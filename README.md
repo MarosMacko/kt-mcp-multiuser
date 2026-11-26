@@ -193,7 +193,7 @@ AI asistent ──OAuth 2.1 + MCP/HTTPS──► kt-mcp ──JSESSIONID──�
 | `/authorize`, `/token`, `/register`, `/revoke` | OAuth: authorization code + PKCE, dynamická registrácia klientov, rotácia refresh tokenov |
 | `/`, `/privacy`, `/forget` | Úvodná stránka, ochrana súkromia, odpojenie účtu |
 | `/healthz` | Kontrola, že server beží, a jeho verzia s commitom |
-| `/badge/users.json` | Počet pripojených účtov (s platným tokenom) pre [shields.io odznak](https://shields.io/badges/endpoint-badge); len číslo, nikdy kto |
+| `/badge/users.json` | Počet pripojených účtov (s platným tokenom) pre [shields.io odznak](https://shields.io/badges/endpoint-badge); len číslo, nikdy kto. Len s `PUBLIC_USER_COUNT=true` |
 
 ```
 src/

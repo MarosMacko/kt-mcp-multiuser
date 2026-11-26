@@ -42,6 +42,8 @@ export interface Config {
   trustProxyHops: number;
   /** Failed Kalorické tabuľky logins per hour across everyone, before sign-in pauses. */
   maxFailedLoginsPerHour: number;
+  /** Serve GET /badge/users.json (the number of connected accounts, publicly). Off unless the operator opts in. */
+  publicUserCount: boolean;
   operator: Operator;
 }
 
@@ -138,6 +140,7 @@ export function loadConfig(): Config {
     allowedOrigins: CLIENT_ORIGINS,
     trustProxyHops: integer('TRUST_PROXY_HOPS', 1, 0, 10),
     maxFailedLoginsPerHour: integer('MAX_FAILED_LOGINS_PER_HOUR', 60, 1, 100000),
+    publicUserCount: flag('PUBLIC_USER_COUNT', false),
     operator: { name: optional('OPERATOR_NAME'), contact: optional('OPERATOR_CONTACT') },
   };
 }

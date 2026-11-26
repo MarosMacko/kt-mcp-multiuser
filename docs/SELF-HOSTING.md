@@ -27,6 +27,7 @@ Všetko sa nastavuje premennými prostredia; vzor s komentármi je v [`.env.exam
 | `OPERATOR_NAME`, `OPERATOR_CONTACT` | odporúčané | Kto server prevádzkuje a kontakt; zobrazí sa na `/privacy`. Ak server púšťaš iným ľuďom, vyplň. |
 | `ALLOWED_USERS_FILE` | nie | Cesta k zoznamu e-mailov, ktoré sa môžu prihlásiť. Prázdne = ktokoľvek. |
 | `ALLOW_LOCAL_CLIENTS` | nie | `true` (predvolené) povolí lokálnych klientov (Claude Code, VS Code…). |
+| `PUBLIC_USER_COUNT` | nie | `true` zverejní počet pripojených účtov na `/badge/users.json` (shields.io odznak). Predvolene vypnuté. |
 | `EXTRA_REDIRECT_URIS` | nie | Ďalšie presné OAuth redirect URI oddelené medzerou. |
 | `MAX_FAILED_LOGINS_PER_HOUR` | nie | Celkový strop neúspešných prihlásení za hodinu (predvolene 60). |
 | `TRUST_PROXY_HOPS` | nie | Počet proxy pred aplikáciou (predvolene 1). |
